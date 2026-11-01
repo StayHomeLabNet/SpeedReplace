@@ -22,7 +22,7 @@ file-format handling and safeguards against accidental data loss.
 - React and TypeScript user interface
 - Windows, macOS, and Linux
 
-## v1.0 features
+## v1.0.0 features
 
 - Files and recursive folder targets
 - Literal, regular-expression, and multiline replacement
@@ -40,10 +40,16 @@ The implementation specification is in
 
 ## Project status
 
-SpeedReplace v1.0 is implemented. It includes the independent Rust engine,
+SpeedReplace v1.0.0 is the first stable release. It includes the independent Rust engine,
 Tauri command layer, React desktop interface, verified backup/apply/undo flow,
 and a cross-platform CI definition. See the [user guide](docs/USER_GUIDE.md)
 for the workflow and safety behavior.
+
+## Release
+
+The current stable release is **v1.0.0**. See the bilingual
+[release notes](RELEASE_NOTES.md) for features, supported packages, validation,
+and distribution notes.
 
 ## Development
 
