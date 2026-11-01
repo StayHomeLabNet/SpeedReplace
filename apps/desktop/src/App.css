@@ -13,7 +13,9 @@ h1,h2,p { margin: 0; }
 h1 { font-size: 18px; line-height: 1.2; }
 h2 { font-size: 16px; }
 .brand p { font-size: 12px; color: #718096; }
-.top-actions { display: flex; gap: 12px; align-items: center; }
+.top-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; align-items: center; }
+.language-picker { display: flex; align-items: center; gap: 7px; color: #677287; font-size: 12px; font-weight: 700; }
+.language-picker select { min-width: 104px; padding: 6px 28px 6px 9px; }
 .mode-switch { display: flex; padding: 3px; border-radius: 9px; background: #edf0f6; }
 .mode-switch button { border: 0; border-radius: 7px; padding: 6px 12px; color: #596579; background: transparent; }
 .mode-switch button.active { color: #27324a; background: white; box-shadow: 0 1px 4px #1720331c; }
@@ -68,5 +70,5 @@ textarea:focus, input:focus, select:focus { border-color: #6e5fe8; box-shadow: 0
 .modal { width: min(680px,100%); max-height: 75vh; overflow: auto; padding: 20px; border-radius: 14px; background: white; box-shadow: 0 24px 60px #11182755; }
 .history-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid #e4e8ef; }
 .history-row > div { display: grid; gap: 3px; }
-@media (max-width: 780px) { .advanced-grid { grid-template-columns: 1fr; } .topbar { padding: 12px 18px; } main { width: calc(100% - 24px); } .rule-fields { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); } .actionbar { flex-wrap: wrap; } .actionbar > div { flex-basis: 100%; } }
+@media (max-width: 780px) { .advanced-grid { grid-template-columns: 1fr; } .topbar { align-items: flex-start; padding: 12px 18px; } .top-actions { max-width: 70%; } .language-picker > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); } main { width: calc(100% - 24px); } .rule-fields { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); } .actionbar { flex-wrap: wrap; } .actionbar > div { flex-basis: 100%; } }
 @media (prefers-color-scheme: dark) { :root { color: #e8edf5; background: #111827; } .topbar,.panel,.modal,.actionbar { background: #182132; border-color: #303b4f; } .drop-zone,.rule { background: #141d2c; border-color: #344057; } button,textarea,input[type="text"],input[type="number"],select { color: #e7ecf5; background: #202b3e; border-color: #435069; } .chip,.summary,.badge,.mode-switch { background: #273247; } .mode-switch button.active { color:#fff;background:#3b4760; } .file-list,.file-card + .file-card { border-color:#344057; } .file-name { background: transparent; } }

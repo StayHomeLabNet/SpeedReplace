@@ -72,6 +72,12 @@ download:
 
 Workflow artifacts are retained for 30 days.
 
+## Localization
+
+English is the default UI language, and users can switch languages from the
+application header. New languages are added as automatically discovered,
+type-checked locale files. See [docs/LOCALIZATION.md](docs/LOCALIZATION.md).
+
 The software is released under the MIT License. Public binaries still require
 platform signing/notarization credentials owned by the distributor.
 

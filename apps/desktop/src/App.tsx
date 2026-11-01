@@ -2,11 +2,25 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { DEFAULT_EXCLUDES, type FilePreview, type OperationManifest, type ReplacementRule, type ScanRequest, type ScanResult, newRule } from "./types";
+import { useI18n, type TranslationKey, type TranslationParams } from "./i18n";
+import {
+  DEFAULT_EXCLUDES,
+  type FilePreview,
+  type OperationManifest,
+  type ReplacementRule,
+  type ScanRequest,
+  type ScanResult,
+  newRule,
+} from "./types";
 import "./App.css";
 
 type Mode = "simple" | "advanced";
 type Phase = "idle" | "scanning" | "preview" | "applying" | "complete";
+type StatusMessage = {
+  key: TranslationKey;
+  values?: Partial<Record<"targets" | "files" | "matches" | "conflicts", number>>;
+};
+type UiError = { key?: TranslationKey; text?: string };
 
 function shortPath(path: string) {
   const parts = path.split("\\").join("/").split("/");
@@ -14,6 +28,7 @@ function shortPath(path: string) {
 }
 
 function App() {
+  const { language, setLanguage, locale, locales, t, count } = useI18n();
   const [mode, setMode] = useState<Mode>("simple");
   const [phase, setPhase] = useState<Phase>("idle");
   const [targets, setTargets] = useState<string[]>([]);
@@ -25,8 +40,8 @@ function App() {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState("ファイルまたはフォルダーを追加してください");
-  const [error, setError] = useState("");
+  const [message, setMessage] = useState<StatusMessage>({ key: "message.initial" });
+  const [error, setError] = useState<UiError>({});
   const [history, setHistory] = useState<OperationManifest[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -34,8 +49,8 @@ function App() {
     return {
       targets,
       filters: {
-        includes: includes.split(/[,\n]/).map((v) => v.trim()).filter(Boolean),
-        excludes: excludes.split(/[,\n]/).map((v) => v.trim()).filter(Boolean),
+        includes: includes.split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
+        excludes: excludes.split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
         maxFileSize: Math.max(1, maxMiB) * 1024 * 1024,
         recursive,
       },
@@ -43,20 +58,32 @@ function App() {
     };
   }
 
-  const stale = useMemo(() => scan ? JSON.stringify(scan.request) !== JSON.stringify(buildRequest()) : false,
-    [scan, targets, rules, includes, excludes, recursive, maxMiB]);
+  const stale = useMemo(
+    () => (scan ? JSON.stringify(scan.request) !== JSON.stringify(buildRequest()) : false),
+    [scan, targets, rules, includes, excludes, recursive, maxMiB],
+  );
 
   useEffect(() => {
     if (!isTauri()) return;
     const unlisten = getCurrentWindow().onDragDropEvent((event) => {
       if (event.payload.type === "drop") addTargets(event.payload.paths);
     });
-    return () => { void unlisten.then((fn) => fn()); };
+    return () => { void unlisten.then((stop) => stop()); };
   }, []);
+
+  function renderStatus(status: StatusMessage) {
+    const params: TranslationParams = {};
+    for (const [name, value] of Object.entries(status.values ?? {})) {
+      if (value === undefined) continue;
+      const unit = name === "targets" ? "target" : name === "matches" ? "match" : name === "conflicts" ? "conflict" : "file";
+      params[name] = count(unit, value);
+    }
+    return t(status.key, params);
+  }
 
   function addTargets(paths: string[]) {
     setTargets((current) => Array.from(new Set([...current, ...paths])));
-    setMessage(`${paths.length}件の対象を追加しました`);
+    setMessage({ key: "message.targetsAdded", values: { targets: paths.length } });
   }
 
   async function chooseTargets(kind: "file" | "folder") {
@@ -65,7 +92,7 @@ function App() {
   }
 
   function updateRule(id: string, patch: Partial<ReplacementRule>) {
-    setRules((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setRules((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
 
   function moveRule(index: number, direction: -1 | 1) {
@@ -79,85 +106,245 @@ function App() {
   }
 
   async function runScan() {
-    setError("");
-    if (!targets.length) return setError("対象ファイルまたはフォルダーを追加してください");
-    if (!rules.some((rule) => rule.enabled && rule.search.length > 0)) return setError("有効な検索文字列を入力してください");
+    setError({});
+    if (!targets.length) return setError({ key: "error.noTargets" });
+    if (!rules.some((rule) => rule.enabled && rule.search.length > 0)) {
+      return setError({ key: "error.noSearch" });
+    }
     setPhase("scanning");
-    setMessage("安全なプレビューを作成しています…");
+    setMessage({ key: "message.scanning" });
     try {
       const result = await invoke<ScanResult>("scan_files", { request: buildRequest() });
       setScan(result);
       setSelected(new Set(result.files.filter((file) => file.changed).map((file) => file.path)));
       setPhase("preview");
-      setMessage(`${result.summary.changed}ファイル、${result.summary.matches}箇所の変更候補`);
+      setMessage({
+        key: "message.previewSummary",
+        values: { files: result.summary.changed, matches: result.summary.matches },
+      });
     } catch (reason) {
-      setError(String(reason)); setPhase("idle");
+      setError({ text: String(reason) });
+      setPhase("idle");
     }
   }
 
   async function applyChanges() {
     if (!scan || stale || !selected.size) return;
-    if (!window.confirm(`${selected.size}ファイルを変更します。検証済みバックアップを先に作成します。`)) return;
-    setPhase("applying"); setError(""); setMessage("バックアップを作成して変更を適用しています…");
+    if (!window.confirm(t("confirm.apply", { files: count("file", selected.size) }))) return;
+    setPhase("applying");
+    setError({});
+    setMessage({ key: "message.applying" });
     try {
-      const operation = await invoke<OperationManifest>("apply_changes", { request: { scan, selectedPaths: Array.from(selected) } });
+      const operation = await invoke<OperationManifest>("apply_changes", {
+        request: { scan, selectedPaths: Array.from(selected) },
+      });
       const changed = operation.files.filter((file) => file.status === "changed").length;
       const conflicts = operation.files.filter((file) => file.status === "conflict").length;
-      setMessage(`${changed}ファイルを変更しました${conflicts ? `（競合 ${conflicts}件）` : ""}`);
-      setPhase("complete"); setScan(null); setSelected(new Set()); await loadHistory();
+      setMessage({
+        key: conflicts ? "message.appliedWithConflicts" : "message.applied",
+        values: { files: changed, conflicts },
+      });
+      setPhase("complete");
+      setScan(null);
+      setSelected(new Set());
+      await loadHistory();
     } catch (reason) {
-      setError(String(reason)); setPhase("preview");
+      setError({ text: String(reason) });
+      setPhase("preview");
     }
   }
 
   async function loadHistory() {
-    try { setHistory(await invoke<OperationManifest[]>("list_operations")); }
-    catch (reason) { setError(String(reason)); }
+    try {
+      setHistory(await invoke<OperationManifest[]>("list_operations"));
+    } catch (reason) {
+      setError({ text: String(reason) });
+    }
   }
 
-  async function openHistory() { await loadHistory(); setShowHistory(true); }
+  async function openHistory() {
+    await loadHistory();
+    setShowHistory(true);
+  }
 
   async function undoOperation(operation: OperationManifest) {
-    setError("");
+    setError({});
     try {
-      const preview = await invoke<{ safe: string[]; conflicts: string[]; missing: string[] }>("get_undo_preview", { operationId: operation.id });
-      const detail = `${preview.safe.length}件を安全に復元できます。` + (preview.conflicts.length ? ` 外部変更との競合 ${preview.conflicts.length}件は復元しません。` : "");
-      if (!window.confirm(`${detail}\n続行しますか？`)) return;
-      await invoke("undo_operation", { request: { operationId: operation.id, selectedPaths: preview.safe, overwriteConflicts: false } });
-      setMessage(`${preview.safe.length}ファイルを元に戻しました`); await loadHistory();
-    } catch (reason) { setError(String(reason)); }
+      const preview = await invoke<{ safe: string[]; conflicts: string[]; missing: string[] }>("get_undo_preview", {
+        operationId: operation.id,
+      });
+      const detail = t("confirm.undoSafe", { files: count("file", preview.safe.length) })
+        + (preview.conflicts.length
+          ? t("confirm.undoConflicts", { conflicts: count("conflict", preview.conflicts.length) })
+          : "");
+      if (!window.confirm(`${detail}\n${t("confirm.continue")}`)) return;
+      await invoke("undo_operation", {
+        request: { operationId: operation.id, selectedPaths: preview.safe, overwriteConflicts: false },
+      });
+      setMessage({ key: "message.undone", values: { files: preview.safe.length } });
+      await loadHistory();
+    } catch (reason) {
+      setError({ text: String(reason) });
+    }
   }
 
   function toggleSelected(path: string) {
-    setSelected((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; });
+    setSelected((current) => {
+      const next = new Set(current);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
   }
 
   function toggleExpanded(path: string) {
-    setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; });
+    setExpanded((current) => {
+      const next = new Set(current);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
   }
+
+  const displayedError = error.key ? t(error.key) : error.text;
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">SR</span><div><h1>SpeedReplace</h1><p>高速で、安全な一括置換</p></div></div>
-        <div className="top-actions"><div className="mode-switch" aria-label="表示モード"><button className={mode === "simple" ? "active" : ""} onClick={() => setMode("simple")}>シンプル</button><button className={mode === "advanced" ? "active" : ""} onClick={() => setMode("advanced")}>詳細</button></div><button className="ghost" onClick={openHistory}>履歴・Undo</button></div>
+        <div className="brand">
+          <span className="brand-mark">SR</span>
+          <div><h1>SpeedReplace</h1><p>{t("brand.tagline")}</p></div>
+        </div>
+        <div className="top-actions">
+          <label className="language-picker">
+            <span>{t("language.label")}</span>
+            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+              {locales.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+            </select>
+          </label>
+          <div className="mode-switch" aria-label={t("mode.label")}>
+            <button className={mode === "simple" ? "active" : ""} onClick={() => setMode("simple")}>{t("mode.simple")}</button>
+            <button className={mode === "advanced" ? "active" : ""} onClick={() => setMode("advanced")}>{t("mode.advanced")}</button>
+          </div>
+          <button className="ghost" onClick={openHistory}>{t("history.open")}</button>
+        </div>
       </header>
       <main>
-        <section className="panel"><div className="section-heading"><div><span className="step">1</span><h2>対象を選択</h2></div><span className="muted">ドラッグ＆ドロップにも対応</span></div>
-          <div className="target-actions"><button onClick={() => chooseTargets("file")}>＋ ファイルを追加</button><button onClick={() => chooseTargets("folder")}>＋ フォルダーを追加</button></div>
-          {targets.length ? <div className="chips">{targets.map((target) => <span className="chip" key={target} title={target}>{shortPath(target)}<button aria-label="対象から削除" onClick={() => setTargets(targets.filter((item) => item !== target))}>×</button></span>)}</div> : <div className="drop-zone">ここにファイルまたはフォルダーをドロップ</div>}
-          {mode === "advanced" && <div className="advanced-grid"><label>対象パターン<textarea value={includes} onChange={(e) => setIncludes(e.target.value)} placeholder="**/*.txt&#10;**/*.md" /></label><label>除外パターン<textarea value={excludes} onChange={(e) => setExcludes(e.target.value)} /></label><label className="inline"><input type="checkbox" checked={recursive} onChange={(e) => setRecursive(e.target.checked)} />サブフォルダーを含む</label><label className="inline">最大サイズ <input className="number" type="number" min={1} value={maxMiB} onChange={(e) => setMaxMiB(Number(e.target.value))} /> MiB</label></div>}
+        <section className="panel">
+          <div className="section-heading">
+            <div><span className="step">1</span><h2>{t("targets.title")}</h2></div>
+            <span className="muted">{t("targets.hint")}</span>
+          </div>
+          <div className="target-actions">
+            <button onClick={() => chooseTargets("file")}>{t("targets.addFile")}</button>
+            <button onClick={() => chooseTargets("folder")}>{t("targets.addFolder")}</button>
+          </div>
+          {targets.length ? (
+            <div className="chips">
+              {targets.map((target) => (
+                <span className="chip" key={target} title={target}>
+                  {shortPath(target)}
+                  <button aria-label={t("targets.remove")} onClick={() => setTargets(targets.filter((item) => item !== target))}>×</button>
+                </span>
+              ))}
+            </div>
+          ) : <div className="drop-zone">{t("targets.drop")}</div>}
+          {mode === "advanced" && (
+            <div className="advanced-grid">
+              <label>{t("targets.includes")}<textarea value={includes} onChange={(event) => setIncludes(event.target.value)} placeholder={"**/*.txt\n**/*.md"} /></label>
+              <label>{t("targets.excludes")}<textarea value={excludes} onChange={(event) => setExcludes(event.target.value)} /></label>
+              <label className="inline"><input type="checkbox" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />{t("targets.recursive")}</label>
+              <label className="inline">{t("targets.maxSize")} <input className="number" type="number" min={1} value={maxMiB} onChange={(event) => setMaxMiB(Number(event.target.value))} /> MiB</label>
+            </div>
+          )}
         </section>
-        <section className="panel"><div className="section-heading"><div><span className="step">2</span><h2>置換ルール</h2></div>{mode === "advanced" && <button className="ghost" onClick={() => setRules([...rules, newRule()])}>＋ ルール追加</button>}</div>
-          <div className="rules">{rules.map((rule, index) => <div className="rule" key={rule.id}>{mode === "advanced" && <input aria-label="ルールを有効化" type="checkbox" checked={rule.enabled} onChange={(e) => updateRule(rule.id, { enabled: e.target.checked })} />}<div className="rule-body"><div className="rule-fields"><textarea aria-label="検索文字列" value={rule.search} onChange={(e) => updateRule(rule.id, { search: e.target.value })} placeholder="検索する文字列" /><span className="arrow">→</span><textarea aria-label="置換文字列" value={rule.replacement} onChange={(e) => updateRule(rule.id, { replacement: e.target.value })} placeholder="置換後の文字列" /></div>{mode === "advanced" && <div className="rule-options"><select value={rule.mode} onChange={(e) => updateRule(rule.id, { mode: e.target.value as "literal" | "regex" })}><option value="literal">通常</option><option value="regex">正規表現</option></select><label><input type="checkbox" checked={rule.caseSensitive} onChange={(e) => updateRule(rule.id, { caseSensitive: e.target.checked })} />大文字小文字を区別</label><label><input type="checkbox" checked={rule.wholeWord} disabled={rule.mode === "regex"} onChange={(e) => updateRule(rule.id, { wholeWord: e.target.checked })} />単語単位</label><button className="icon" disabled={index === 0} onClick={() => moveRule(index, -1)}>↑</button><button className="icon" disabled={index === rules.length - 1} onClick={() => moveRule(index, 1)}>↓</button>{rules.length > 1 && <button className="icon danger" onClick={() => setRules(rules.filter((item) => item.id !== rule.id))}>×</button>}</div>}</div></div>)}</div>
+        <section className="panel">
+          <div className="section-heading">
+            <div><span className="step">2</span><h2>{t("rules.title")}</h2></div>
+            {mode === "advanced" && <button className="ghost" onClick={() => setRules([...rules, newRule()])}>{t("rules.add")}</button>}
+          </div>
+          <div className="rules">
+            {rules.map((rule, index) => (
+              <div className="rule" key={rule.id}>
+                {mode === "advanced" && <input aria-label={t("rules.enable")} type="checkbox" checked={rule.enabled} onChange={(event) => updateRule(rule.id, { enabled: event.target.checked })} />}
+                <div className="rule-body">
+                  <div className="rule-fields">
+                    <textarea aria-label={t("rules.searchLabel")} value={rule.search} onChange={(event) => updateRule(rule.id, { search: event.target.value })} placeholder={t("rules.searchPlaceholder")} />
+                    <span className="arrow">→</span>
+                    <textarea aria-label={t("rules.replacementLabel")} value={rule.replacement} onChange={(event) => updateRule(rule.id, { replacement: event.target.value })} placeholder={t("rules.replacementPlaceholder")} />
+                  </div>
+                  {mode === "advanced" && (
+                    <div className="rule-options">
+                      <select value={rule.mode} onChange={(event) => updateRule(rule.id, { mode: event.target.value as "literal" | "regex" })}>
+                        <option value="literal">{t("rules.literal")}</option>
+                        <option value="regex">{t("rules.regex")}</option>
+                      </select>
+                      <label><input type="checkbox" checked={rule.caseSensitive} onChange={(event) => updateRule(rule.id, { caseSensitive: event.target.checked })} />{t("rules.caseSensitive")}</label>
+                      <label><input type="checkbox" checked={rule.wholeWord} disabled={rule.mode === "regex"} onChange={(event) => updateRule(rule.id, { wholeWord: event.target.checked })} />{t("rules.wholeWord")}</label>
+                      <button className="icon" aria-label={t("rules.moveUp")} title={t("rules.moveUp")} disabled={index === 0} onClick={() => moveRule(index, -1)}>↑</button>
+                      <button className="icon" aria-label={t("rules.moveDown")} title={t("rules.moveDown")} disabled={index === rules.length - 1} onClick={() => moveRule(index, 1)}>↓</button>
+                      {rules.length > 1 && <button className="icon danger" aria-label={t("rules.remove")} title={t("rules.remove")} onClick={() => setRules(rules.filter((item) => item.id !== rule.id))}>×</button>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
-        <section className="panel preview-panel"><div className="section-heading"><div><span className="step">3</span><h2>プレビューと実行</h2></div>{scan && <span className="summary">{scan.summary.changed}ファイル・{scan.summary.matches}件</span>}</div>
-          {stale && <div className="notice warning">条件が変更されました。安全のためプレビューを再作成してください。</div>}{error && <div className="notice error" role="alert">{error}</div>}
-          {!scan ? <div className="empty-preview"><span>差分プレビューはここに表示されます</span></div> : <div className="file-list">{scan.files.map((file: FilePreview) => <article className={`file-card ${file.error ? "has-error" : ""}`} key={file.path}><div className="file-row"><input type="checkbox" aria-label="変更対象" disabled={!file.changed} checked={selected.has(file.path)} onChange={() => toggleSelected(file.path)} /><button className="file-name" onClick={() => toggleExpanded(file.path)} title={file.path}>{file.changed ? (expanded.has(file.path) ? "▾" : "▸") : "·"} {shortPath(file.path)}</button>{file.encoding && <span className="badge">{file.encoding.name}{file.encoding.hasBom ? " BOM" : ""}</span>}<span className="badge">{file.lineEndings}</span><span className="matches">{file.matchCount}件</span></div>{file.error && <div className="file-error">{file.error}</div>}{expanded.has(file.path) && file.diff && <pre className="diff">{file.diff}</pre>}</article>)}</div>}
-          <div className="actionbar"><div><strong>{message}</strong><small>元の文字コード・BOM・改行コードを維持します</small></div><button className="secondary" disabled={phase === "scanning" || phase === "applying"} onClick={runScan}>{phase === "scanning" ? "スキャン中…" : scan && stale ? "再プレビュー" : "検索・プレビュー"}</button><button className="primary" disabled={!scan || stale || selected.size === 0 || phase === "applying"} onClick={applyChanges}>{phase === "applying" ? "適用中…" : `${selected.size}ファイルを置換`}</button></div>
+        <section className="panel preview-panel">
+          <div className="section-heading">
+            <div><span className="step">3</span><h2>{t("preview.title")}</h2></div>
+            {scan && <span className="summary">{count("file", scan.summary.changed)} · {count("match", scan.summary.matches)}</span>}
+          </div>
+          {stale && <div className="notice warning">{t("preview.stale")}</div>}
+          {displayedError && <div className="notice error" role="alert">{displayedError}</div>}
+          {!scan ? (
+            <div className="empty-preview"><span>{t("preview.empty")}</span></div>
+          ) : (
+            <div className="file-list">
+              {scan.files.map((file: FilePreview) => (
+                <article className={`file-card ${file.error ? "has-error" : ""}`} key={file.path}>
+                  <div className="file-row">
+                    <input type="checkbox" aria-label={t("preview.changeTarget")} disabled={!file.changed} checked={selected.has(file.path)} onChange={() => toggleSelected(file.path)} />
+                    <button className="file-name" onClick={() => toggleExpanded(file.path)} title={file.path}>{file.changed ? (expanded.has(file.path) ? "▾" : "▸") : "·"} {shortPath(file.path)}</button>
+                    {file.encoding && <span className="badge">{file.encoding.name}{file.encoding.hasBom ? " BOM" : ""}</span>}
+                    <span className="badge">{file.lineEndings}</span>
+                    <span className="matches">{count("match", file.matchCount)}</span>
+                  </div>
+                  {file.error && <div className="file-error">{file.error}</div>}
+                  {expanded.has(file.path) && file.diff && <pre className="diff">{file.diff}</pre>}
+                </article>
+              ))}
+            </div>
+          )}
+          <div className="actionbar">
+            <div><strong>{renderStatus(message)}</strong><small>{t("preview.preserve")}</small></div>
+            <button className="secondary" disabled={phase === "scanning" || phase === "applying"} onClick={runScan}>
+              {phase === "scanning" ? t("preview.scanning") : scan && stale ? t("preview.rescan") : t("preview.scan")}
+            </button>
+            <button className="primary" disabled={!scan || stale || selected.size === 0 || phase === "applying"} onClick={applyChanges}>
+              {phase === "applying" ? t("preview.applying") : t("preview.apply", { files: count("file", selected.size) })}
+            </button>
+          </div>
         </section>
       </main>
-      {showHistory && <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal" onMouseDown={(e) => e.stopPropagation()}><div className="section-heading"><div><h2>置換履歴とUndo</h2></div><button className="icon" onClick={() => setShowHistory(false)}>×</button></div>{!history.length ? <p className="muted">履歴はまだありません。</p> : history.map((operation) => <div className="history-row" key={operation.id}><div><strong>{new Date(operation.createdAt).toLocaleString()}</strong><small>{operation.files.filter((file) => file.status === "changed").length}ファイル</small></div><button onClick={() => undoOperation(operation)}>安全に元に戻す</button></div>)}</section></div>}
+      {showHistory && (
+        <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}>
+          <section className="modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="section-heading">
+              <div><h2>{t("history.title")}</h2></div>
+              <button className="icon" aria-label={t("history.close")} onClick={() => setShowHistory(false)}>×</button>
+            </div>
+            {!history.length ? <p className="muted">{t("history.empty")}</p> : history.map((operation) => (
+              <div className="history-row" key={operation.id}>
+                <div>
+                  <strong>{new Date(operation.createdAt).toLocaleString(locale.code)}</strong>
+                  <small>{count("file", operation.files.filter((file) => file.status === "changed").length)}</small>
+                </div>
+                <button onClick={() => undoOperation(operation)}>{t("history.undo")}</button>
+              </div>
+            ))}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

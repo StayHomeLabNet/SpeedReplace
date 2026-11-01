@@ -63,4 +63,8 @@ Windows版とLinux版の配布パッケージは、GitHub Actionsの **Package d
 
 ワークフローのArtifactは30日間保持されます。
 
+## 多言語化
+
+UIのデフォルト言語は英語で、アプリ上部から言語を切り替えられます。新しい言語は、自動検出される型検査付き言語ファイルとして追加できます。詳細は[docs/LOCALIZATION.md](docs/LOCALIZATION.md)を参照してください。
+
 本ソフトウェアはMIT Licenseの下で公開されています。一般向けにバイナリを配布するには、配布者が保有する各プラットフォームの署名・Notarization用証明書が必要です。
