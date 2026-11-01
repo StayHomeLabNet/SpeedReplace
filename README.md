@@ -61,6 +61,15 @@ Create a local production bundle with:
 pnpm --dir apps/desktop tauri build
 ```
 
+Windows and Linux distribution packages are built by the **Package desktop
+apps** GitHub Actions workflow. Run it manually, or push a `v*` tag, then
+download:
+
+- `SpeedReplace-Windows-x64`: MSI and NSIS (`.exe`) installers
+- `SpeedReplace-Linux-x64`: Debian (`.deb`) and AppImage packages
+
+Workflow artifacts are retained for 30 days.
+
 The software is released under the MIT License. Public binaries still require
 platform signing/notarization credentials owned by the distributor.
 
