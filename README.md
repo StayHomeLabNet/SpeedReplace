@@ -1,7 +1,9 @@
 # SpeedReplace
 
-SpeedReplace is a planned cross-platform desktop application for fast, safe,
-batch text replacement.
+[English](README.md) | [日本語](README.ja.md)
+
+SpeedReplace is a cross-platform desktop application for fast, safe batch text
+replacement.
 
 The project combines the straightforward workflow of `speeeeed` with modern
 file-format handling and safeguards against accidental data loss.
@@ -13,14 +15,14 @@ file-format handling and safeguards against accidental data loss.
 3. Fast enough that preview remains the normal workflow.
 4. Local and offline by default.
 
-## Planned stack
+## Technology stack
 
 - Tauri 2
 - Rust replacement engine
 - React and TypeScript user interface
 - Windows, macOS, and Linux
 
-## v1.0 scope
+## v1.0 features
 
 - Files and recursive folder targets
 - Literal, regular-expression, and multiline replacement
