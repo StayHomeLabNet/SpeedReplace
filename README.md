@@ -38,7 +38,29 @@ The implementation specification is in
 
 ## Project status
 
-The v1.0 design baseline has been created. Implementation has not started yet.
-The public product name, software license, signing identities, and release
-channels still need final confirmation.
+SpeedReplace v1.0 is implemented. It includes the independent Rust engine,
+Tauri command layer, React desktop interface, verified backup/apply/undo flow,
+and a cross-platform CI definition. See the [user guide](docs/USER_GUIDE.md)
+for the workflow and safety behavior.
+
+## Development
+
+Requirements: Node.js 24+, pnpm 11+, the stable Rust toolchain, and the native
+Tauri prerequisites for the host operating system.
+
+```bash
+pnpm install
+cargo test --workspace
+pnpm --dir apps/desktop build
+pnpm --dir apps/desktop tauri dev
+```
+
+Create a local production bundle with:
+
+```bash
+pnpm --dir apps/desktop tauri build
+```
+
+The software is released under the MIT License. Public binaries still require
+platform signing/notarization credentials owned by the distributor.
 
