@@ -18,10 +18,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 blake3 = "1"
 regex = "1"
 encoding_rs = "0.8"
-chardetng = "0.1"
+chardetng = "1.0"
 walkdir = "2"
 globset = "0.4"
-similar = "2"
+similar = "3"
 tempfile = "3"
 chrono = { version = "0.4", features = ["serde"] }
 
