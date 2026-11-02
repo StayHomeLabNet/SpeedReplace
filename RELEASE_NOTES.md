@@ -34,6 +34,12 @@ SpeedReplace v1.0.1 is a public-readiness and safety update.
   until the upstream GUI stack migrates.
 - TypeScript, Vite, and Tauri production builds passed.
 
+### Distribution packages
+
+- Windows x64: MSI and NSIS (`.exe`) installers
+- Linux x64: Debian (`.deb`) and AppImage packages
+- macOS Universal: DMG for Apple Silicon and Intel Macs
+
 ### Distribution note
 
 Packages remain unsigned and may trigger an operating-system security warning.
@@ -63,6 +69,12 @@ SpeedReplace v1.0.1は、公開準備と安全性強化のためのアップデ�
 - npmの既知の本番依存脆弱性は0件
 - RustSecの既知脆弱性は0件。TauriのLinux GTK3依存連鎖にRUSTSEC-2024-0370とRUSTSEC-2024-0429の警告が残りますが、アプリは対象APIを直接使用しません。上流GUIスタックの移行まで監視を継続
 - TypeScript、Vite、Tauriの製品ビルドが合格
+
+### 配布パッケージ
+
+- Windows x64：MSIおよびNSIS（`.exe`）インストーラー
+- Linux x64：Debian（`.deb`）およびAppImageパッケージ
+- macOS Universal：Apple SiliconとIntel Macに対応するDMG
 
 ### 配布時の注意
 

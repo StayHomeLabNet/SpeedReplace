@@ -97,10 +97,11 @@ pnpm --dir apps/desktop tauri dev
 pnpm --dir apps/desktop tauri build
 ```
 
-Windows版とLinux版の配布パッケージは、GitHub Actionsの **Package desktop apps** ワークフローで作成します。手動で実行するか、`v*`タグをプッシュした後、次のArtifactをダウンロードしてください。
+Windows版、Linux版、macOS版の配布パッケージは、GitHub Actionsの **Package desktop apps** ワークフローで作成します。手動で実行するか、`v*`タグをプッシュした後、次のArtifactをダウンロードしてください。
 
 - `SpeedReplace-Windows-x64`：MSIおよびNSIS（`.exe`）インストーラー
 - `SpeedReplace-Linux-x64`：Debian（`.deb`）およびAppImageパッケージ
+- `SpeedReplace-macOS-Universal`：Apple SiliconとIntel Macの両方に対応するUniversal DMG
 
 ワークフローのArtifactは30日間保持されます。
 
