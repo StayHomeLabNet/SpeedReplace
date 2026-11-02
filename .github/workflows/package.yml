@@ -23,14 +23,14 @@ jobs:
         include:
           - name: Windows
             os: windows-latest
-            bundles: msi,nsis
+            bundles: msi nsis
             artifact_name: SpeedReplace-Windows-x64
             artifact_paths: |
               target/release/bundle/msi/*.msi
               target/release/bundle/nsis/*.exe
           - name: Linux
             os: ubuntu-24.04
-            bundles: deb,appimage
+            bundles: deb appimage
             artifact_name: SpeedReplace-Linux-x64
             artifact_paths: |
               target/release/bundle/deb/*.deb
