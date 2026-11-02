@@ -1,4 +1,4 @@
-# SpeedReplace v1.0.1 user guide
+# SpeedReplace v1.0.2 user guide
 
 The interface starts in English. Use the language selector in the application
 header to switch between English and Japanese. The selection is retained on

@@ -308,7 +308,6 @@ function App() {
                 <input
                   type="checkbox"
                   checked={showUnsupportedFiles}
-                  disabled={!unsupportedFileCount}
                   onChange={(event) => setShowUnsupportedFiles(event.target.checked)}
                 />
                 {t("preview.showUnsupported", { count: unsupportedFileCount })}

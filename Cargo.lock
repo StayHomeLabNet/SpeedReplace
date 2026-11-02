@@ -3005,7 +3005,7 @@ dependencies = [
 
 [[package]]
 name = "speedreplace"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -3017,7 +3017,7 @@ dependencies = [
 
 [[package]]
 name = "speedreplace-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "blake3",
  "chardetng",

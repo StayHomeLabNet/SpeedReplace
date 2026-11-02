@@ -1,3 +1,74 @@
+# SpeedReplace v1.0.2
+
+Release date: November 3, 2026
+
+## English
+
+SpeedReplace v1.0.2 fixes the packaged UI and completes cross-platform
+distribution.
+
+### Changes
+
+- Hide unsupported files from the Preview and apply list by default.
+- Add an always-visible **Show unsupported files** checkbox, with the current
+  unsupported-file count, on the right side of the step 3 heading.
+- Add a clear empty state when a scan contains no supported files.
+- Document PHP and other supported plain-text file types while clarifying that
+  file support is content- and encoding-based rather than an extension
+  whitelist.
+- Add automated Universal macOS DMG packaging for Apple Silicon and Intel Macs.
+
+### Validation
+
+- All 16 Rust tests passed.
+- Rust formatting and Clippy static analysis passed.
+- TypeScript and Vite production builds passed.
+- Windows, Linux, and macOS Universal distribution-package builds passed.
+
+### Distribution packages
+
+- Windows x64: MSI and NSIS (`.exe`) installers
+- Linux x64: Debian (`.deb`) and AppImage packages
+- macOS Universal: DMG for Apple Silicon and Intel Macs
+
+### Distribution note
+
+Packages remain unsigned and may trigger an operating-system security warning.
+Verify downloads with the `SHA256SUMS.txt` attached to the GitHub Release.
+
+---
+
+## 日本語
+
+SpeedReplace v1.0.2は、配布バイナリのUIを修正し、クロスプラットフォーム配布を完成させるアップデートです。
+
+### 変更内容
+
+- 非対応ファイルを「プレビューと実行」一覧からデフォルトで非表示に変更
+- ステップ3の見出し右側に、非対応ファイル件数付きの **非対応ファイルを表示** チェックボックスを常時表示
+- 対応ファイルがないスキャン結果に専用の案内を追加
+- PHPなどの対応プレーンテキスト形式を追記し、拡張子の許可リストではなく内容と文字コードで判定することを明記
+- Apple SiliconとIntel Macに対応するUniversal DMGの自動パッケージ化を追加
+
+### 検証結果
+
+- Rustテスト16件がすべて合格
+- Rustフォーマット検査とClippy静的解析が合格
+- TypeScriptおよびVite製品ビルドが合格
+- Windows、Linux、macOS Universalの配布パッケージ生成が合格
+
+### 配布パッケージ
+
+- Windows x64：MSIおよびNSIS（`.exe`）インストーラー
+- Linux x64：Debian（`.deb`）およびAppImageパッケージ
+- macOS Universal：Apple SiliconとIntel Macに対応するDMG
+
+### 配布時の注意
+
+パッケージは引き続き未署名のため、OSのセキュリティ警告が表示される場合があります。GitHub Releaseに添付された`SHA256SUMS.txt`でダウンロードを検証できます。
+
+---
+
 # SpeedReplace v1.0.1
 
 Release date: November 2, 2026

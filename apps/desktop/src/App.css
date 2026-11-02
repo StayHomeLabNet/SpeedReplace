@@ -51,7 +51,6 @@ textarea:focus, input:focus, select:focus { border-color: #6e5fe8; box-shadow: 0
 .preview-panel { padding-bottom: 0; overflow: hidden; }
 .section-heading > .preview-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; }
 .show-unsupported { display: flex; align-items: center; gap: 6px; color: #677287; font-size: 12px; font-weight: 600; }
-.show-unsupported:has(input:disabled) { opacity: .55; }
 .summary,.badge { border-radius: 99px; background: #eef0f8; padding: 4px 9px; font-size: 12px; color: #5a6578; }
 .notice { margin-bottom: 12px; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
 .notice.warning { color: #805b16; background: #fff5d9; }

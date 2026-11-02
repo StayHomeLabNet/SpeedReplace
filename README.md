@@ -95,17 +95,17 @@ The original design baseline and roadmap are in
 
 ## Project status
 
-SpeedReplace v1.0.1 is the current stable release. It includes the independent Rust engine,
+SpeedReplace v1.0.2 is the current stable release. It includes the independent Rust engine,
 Tauri command layer, React desktop interface, verified backup/apply/undo flow,
 and a cross-platform CI definition. See the [user guide](docs/USER_GUIDE.md)
 for the workflow and safety behavior.
 
 ## Release
 
-The current stable release is **v1.0.1**. See the bilingual
+The current stable release is **v1.0.2**. See the bilingual
 [release notes](RELEASE_NOTES.md) for features, supported packages, validation,
 and distribution notes. Download installers from the
-[v1.0.1 release](https://github.com/StayHomeLabNet/SpeedReplace/releases/tag/v1.0.1)
+[v1.0.2 release](https://github.com/StayHomeLabNet/SpeedReplace/releases/tag/v1.0.2)
 and verify them with the attached `SHA256SUMS.txt`.
 
 ## Development
