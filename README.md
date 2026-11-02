@@ -62,12 +62,23 @@ file-format handling and safeguards against accidental data loss.
 SpeedReplace works with plain-text files. Support is determined by file content
 and encoding, not only by the filename extension. Common examples include:
 
-- Text and delimited data: `.txt`, `.csv`, `.tsv`, `.log`
-- Documents and structured text: `.md`, `.json`, `.jsonl`, `.xml`, `.html`,
-  `.htm`, `.yaml`, `.yml`, `.toml`
-- Configuration: `.ini`, `.cfg`, `.conf`, `.properties`, `.env`
-- Source code and scripts, including `.rs`, `.js`, `.ts`, `.tsx`, `.jsx`,
-  `.py`, `.java`, `.c`, `.cpp`, `.h`, `.cs`, `.go`, `.sh`, and `.ps1`
+- Text and documents: `.txt`, `.csv`, `.tsv`, `.log`, `.md`, `.rst`, `.adoc`,
+  `.tex`
+- Structured data and markup: `.json`, `.jsonl`, `.xml`, `.html`, `.htm`,
+  `.yaml`, `.yml`, `.toml`, `.sql`, `.graphql`, `.gql`
+- Web and templates: `.php`, `.phtml`, `.php5`, `.css`, `.scss`, `.sass`,
+  `.less`, `.vue`, `.svelte`, `.astro`, `.twig`, `.blade.php`, `.erb`
+- Configuration and build files: `.ini`, `.cfg`, `.conf`, `.properties`,
+  `.env`, `.editorconfig`, `.gitignore`, `.gradle`, `.cmake`, `.mk`, plus
+  extensionless files such as `Dockerfile` and `Makefile`
+- Source code and scripts: `.rs`, `.js`, `.ts`, `.tsx`, `.jsx`, `.py`, `.rb`,
+  `.java`, `.c`, `.cpp`, `.h`, `.cs`, `.go`, `.swift`, `.kt`, `.kts`,
+  `.scala`, `.lua`, `.pl`, `.pm`, `.r`, `.dart`, `.ex`, `.exs`, `.erl`,
+  `.hrl`, `.fs`, `.fsx`, `.vb`, `.sh`, `.ps1`, `.bat`, `.cmd`
+
+These are examples, not an extension whitelist. Other extensionless or
+custom-extension files are supported when their contents use a supported text
+encoding and pass validation.
 
 Supported encodings are UTF-8, UTF-16 LE/BE, Shift_JIS, EUC-JP, ISO-2022-JP,
 and Windows-1252. UTF-8 and UTF-16 BOMs are preserved. Files must pass exact

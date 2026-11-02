@@ -58,10 +58,13 @@ SpeedReplaceは、高速かつ安全にテキストを一括置換するため�
 
 SpeedReplaceはプレーンテキストファイルを処理します。対応可否は拡張子だけではなく、ファイルの内容と文字コードで判定されます。主な例は次の通りです。
 
-- テキスト・区切りデータ：`.txt`、`.csv`、`.tsv`、`.log`
-- 文書・構造化テキスト：`.md`、`.json`、`.jsonl`、`.xml`、`.html`、`.htm`、`.yaml`、`.yml`、`.toml`
-- 設定ファイル：`.ini`、`.cfg`、`.conf`、`.properties`、`.env`
-- ソースコード・スクリプト：`.rs`、`.js`、`.ts`、`.tsx`、`.jsx`、`.py`、`.java`、`.c`、`.cpp`、`.h`、`.cs`、`.go`、`.sh`、`.ps1`など
+- テキスト・文書：`.txt`、`.csv`、`.tsv`、`.log`、`.md`、`.rst`、`.adoc`、`.tex`
+- 構造化データ・マークアップ：`.json`、`.jsonl`、`.xml`、`.html`、`.htm`、`.yaml`、`.yml`、`.toml`、`.sql`、`.graphql`、`.gql`
+- Web・テンプレート：`.php`、`.phtml`、`.php5`、`.css`、`.scss`、`.sass`、`.less`、`.vue`、`.svelte`、`.astro`、`.twig`、`.blade.php`、`.erb`
+- 設定・ビルドファイル：`.ini`、`.cfg`、`.conf`、`.properties`、`.env`、`.editorconfig`、`.gitignore`、`.gradle`、`.cmake`、`.mk`、拡張子のない`Dockerfile`や`Makefile`
+- ソースコード・スクリプト：`.rs`、`.js`、`.ts`、`.tsx`、`.jsx`、`.py`、`.rb`、`.java`、`.c`、`.cpp`、`.h`、`.cs`、`.go`、`.swift`、`.kt`、`.kts`、`.scala`、`.lua`、`.pl`、`.pm`、`.r`、`.dart`、`.ex`、`.exs`、`.erl`、`.hrl`、`.fs`、`.fsx`、`.vb`、`.sh`、`.ps1`、`.bat`、`.cmd`
+
+これらは例示であり、拡張子の許可リストではありません。その他の拡張子のないファイルや独自拡張子でも、対応文字コードのテキストで検証に合格すれば処理できます。
 
 対応文字コードはUTF-8、UTF-16 LE/BE、Shift_JIS、EUC-JP、ISO-2022-JP、Windows-1252です。UTF-8とUTF-16のBOMは維持されます。置換を行う前に、厳密なデコードと往復変換の検証に合格する必要があります。
 
