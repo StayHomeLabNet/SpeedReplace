@@ -189,13 +189,19 @@ fn discover(
     let mut found = BTreeSet::new();
     for target in &request.targets {
         let target = PathBuf::from(target);
-        if target.is_file() {
+        let target_type = fs::symlink_metadata(&target)
+            .ok()
+            .map(|metadata| metadata.file_type());
+        if target_type.is_some_and(|file_type| file_type.is_symlink()) {
+            continue;
+        }
+        if target_type.is_some_and(|file_type| file_type.is_file()) {
             if accepted(&target, include, exclude) {
                 found.insert(target);
             }
             continue;
         }
-        if !target.is_dir() {
+        if !target_type.is_some_and(|file_type| file_type.is_dir()) {
             continue;
         }
         let mut walker = WalkDir::new(&target).follow_links(false);
@@ -358,5 +364,28 @@ mod tests {
         .unwrap();
         assert!(!result.files[0].changed);
         assert!(result.files[0].error.as_deref().unwrap().contains("binary"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn direct_symlink_targets_are_skipped() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("original.txt");
+        let link = directory.path().join("link.txt");
+        fs::write(&original, "old").unwrap();
+        symlink(&original, &link).unwrap();
+
+        let result = scan(ScanRequest {
+            targets: vec![link.to_string_lossy().into_owned()],
+            filters: crate::FilterSpec::default(),
+            rules: vec![rule("old", "new")],
+        })
+        .unwrap();
+
+        assert_eq!(result.summary.discovered, 0);
+        assert!(result.files.is_empty());
+        assert_eq!(fs::read_to_string(original).unwrap(), "old");
     }
 }

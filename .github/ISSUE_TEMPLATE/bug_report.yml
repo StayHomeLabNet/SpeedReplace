@@ -1,0 +1,46 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include confidential file contents. Report security issues privately as described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: SpeedReplace version
+      placeholder: v1.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use non-sensitive sample files whenever possible.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional information
+      description: Include relevant logs only after removing private paths and data.

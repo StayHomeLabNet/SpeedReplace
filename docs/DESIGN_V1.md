@@ -1,8 +1,18 @@
-# SpeedReplace v1.0 detailed design
+# SpeedReplace v1 design baseline and roadmap
 
-Status: implementation baseline  
+Status: historical design baseline and future roadmap
 Last updated: 2026-11-02  
 Audience: contributors and coding agents
+
+> [!IMPORTANT]
+> This document records the original v1 design direction and includes deferred
+> ideas. It is not a claim that every item below shipped in v1.0.1. For current
+> behavior, use the [README](../README.md), [user guide](USER_GUIDE.md), and
+> [release notes](../RELEASE_NOTES.md) as the authoritative sources.
+
+Deferred items include rule presets, CLI support, progress and cancellation,
+explicit encoding overrides, backup-retention controls, and hunk-level
+selection. They remain roadmap candidates rather than v1.0.1 features.
 
 ## 1. Purpose
 

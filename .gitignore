@@ -9,6 +9,7 @@
 
 # JavaScript / TypeScript
 node_modules/
+.pnpm-store/
 dist/
 coverage/
 *.tsbuildinfo

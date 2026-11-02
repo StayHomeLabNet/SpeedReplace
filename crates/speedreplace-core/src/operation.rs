@@ -59,6 +59,7 @@ fn apply_one(
     rules: &[crate::ReplacementRule],
     objects_dir: &Path,
 ) -> Result<OperationFileRecord> {
+    reject_symlink(path)?;
     let original = fs::read(path).map_err(|error| io_error(path, error))?;
     let current_hash = blake3::hash(&original).to_hex().to_string();
     if current_hash != preview.source_hash {
@@ -159,9 +160,17 @@ pub fn undo_preview(backup_root: &str, operation_id: &str) -> Result<UndoPreview
         .filter(|record| matches!(record.status, FileOperationStatus::Changed))
     {
         let path = Path::new(&record.path);
-        if !path.exists() {
-            preview.missing.push(record.path.clone());
-            continue;
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                preview.conflicts.push(record.path.clone());
+                continue;
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                preview.missing.push(record.path.clone());
+                continue;
+            }
+            Err(error) => return Err(io_error(path, error)),
         }
         let current = fs::read(path).map_err(|error| io_error(path, error))?;
         if blake3::hash(&current).to_hex().as_str() == record.result_hash {
@@ -175,6 +184,7 @@ pub fn undo_preview(backup_root: &str, operation_id: &str) -> Result<UndoPreview
 
 pub fn undo(request: UndoRequest) -> Result<OperationManifest> {
     let mut manifest = load_operation(&request.backup_root, &request.operation_id)?;
+    let operation_directory = operation_dir(&request.backup_root, &request.operation_id)?;
     let selected: HashSet<&str> = request.selected_paths.iter().map(String::as_str).collect();
     let restore_all = selected.is_empty();
     for record in &mut manifest.files {
@@ -184,25 +194,42 @@ pub fn undo(request: UndoRequest) -> Result<OperationManifest> {
             continue;
         }
         let path = Path::new(&record.path);
-        let conflict = if path.exists() {
-            let current = fs::read(path).map_err(|error| io_error(path, error))?;
-            blake3::hash(&current).to_hex().as_str() != record.result_hash
-        } else {
-            false
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(io_error(path, error)),
+        };
+        if metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.file_type().is_symlink())
+        {
+            record.status = FileOperationStatus::Conflict;
+            record.message = Some("Symbolic-link target; restore skipped".into());
+            continue;
+        }
+        let target_exists = metadata.is_some();
+        let conflict = match metadata {
+            Some(_) => {
+                let current = fs::read(path).map_err(|error| io_error(path, error))?;
+                blake3::hash(&current).to_hex().as_str() != record.result_hash
+            }
+            None => false,
         };
         if conflict && !request.overwrite_conflicts {
             record.status = FileOperationStatus::Conflict;
             record.message = Some("File changed after replacement; restore skipped".into());
             continue;
         }
-        let backup = Path::new(&record.backup_file);
-        let original = fs::read(backup).map_err(|error| io_error(backup, error))?;
+        let backup = operation_directory
+            .join("objects")
+            .join(&record.source_hash);
+        let original = fs::read(&backup).map_err(|error| io_error(&backup, error))?;
         if blake3::hash(&original).to_hex().as_str() != record.source_hash {
             record.status = FileOperationStatus::Failed;
             record.message = Some("Backup hash mismatch".into());
             continue;
         }
-        if path.exists() {
+        if target_exists {
             replace_file(path, &original)?;
         } else {
             fs::write(path, &original).map_err(|error| io_error(path, error))?;
@@ -216,7 +243,9 @@ pub fn undo(request: UndoRequest) -> Result<OperationManifest> {
 }
 
 fn operation_dir(backup_root: &str, operation_id: &str) -> Result<PathBuf> {
-    if operation_id.contains('/') || operation_id.contains('\\') || operation_id == ".." {
+    let valid_id =
+        Uuid::parse_str(operation_id).is_ok_and(|id| id.hyphenated().to_string() == operation_id);
+    if !valid_id {
         return Err(Error::Manifest("invalid operation ID".into()));
     }
     Ok(PathBuf::from(backup_root)
@@ -247,7 +276,29 @@ fn read_manifest(path: &Path) -> Result<OperationManifest> {
 
 fn load_operation(backup_root: &str, operation_id: &str) -> Result<OperationManifest> {
     let directory = operation_dir(backup_root, operation_id)?;
-    read_manifest(&directory.join("manifest.json"))
+    let manifest = read_manifest(&directory.join("manifest.json"))?;
+    if manifest.schema_version != 1 || manifest.id != operation_id {
+        return Err(Error::Manifest(
+            "operation manifest identity or schema does not match".into(),
+        ));
+    }
+    Ok(manifest)
+}
+
+fn is_symlink(path: &Path) -> Result<bool> {
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .map_err(|error| io_error(path, error))
+}
+
+fn reject_symlink(path: &Path) -> Result<()> {
+    if is_symlink(path)? {
+        return Err(Error::Conflict(format!(
+            "symbolic links are not replaced: {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -367,6 +418,96 @@ mod tests {
         assert_eq!(
             fs::read(&target).unwrap(),
             b"changed by another application"
+        );
+    }
+
+    #[test]
+    fn operation_ids_must_be_canonical_uuids() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_string_lossy();
+
+        assert!(undo_preview(&root, "..").is_err());
+        assert!(undo_preview(&root, ".").is_err());
+        assert!(undo_preview(&root, "not-a-uuid").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_refuses_target_replaced_by_symlink_after_scan() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        let external = directory.path().join("external.txt");
+        fs::write(&target, b"old").unwrap();
+        fs::write(&external, b"old").unwrap();
+        let scan = scan(request(&target)).unwrap();
+        fs::remove_file(&target).unwrap();
+        symlink(&external, &target).unwrap();
+
+        let manifest = apply(ApplyRequest {
+            scan,
+            selected_paths: vec![],
+            backup_root: directory
+                .path()
+                .join("state")
+                .to_string_lossy()
+                .into_owned(),
+        })
+        .unwrap();
+
+        assert!(matches!(
+            manifest.files[0].status,
+            FileOperationStatus::Conflict
+        ));
+        assert_eq!(fs::read(&external).unwrap(), b"old");
+        assert!(
+            fs::symlink_metadata(&target)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn undo_refuses_symlink_even_when_conflict_overwrite_is_enabled() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        let external = directory.path().join("external.txt");
+        fs::write(&target, b"old").unwrap();
+        fs::write(&external, b"external").unwrap();
+        let scan = scan(request(&target)).unwrap();
+        let backup_root = directory.path().join("state");
+        let manifest = apply(ApplyRequest {
+            scan,
+            selected_paths: vec![],
+            backup_root: backup_root.to_string_lossy().into_owned(),
+        })
+        .unwrap();
+        fs::remove_file(&target).unwrap();
+        symlink(&external, &target).unwrap();
+
+        let restored = undo(UndoRequest {
+            backup_root: backup_root.to_string_lossy().into_owned(),
+            operation_id: manifest.id,
+            selected_paths: vec![],
+            overwrite_conflicts: true,
+        })
+        .unwrap();
+
+        assert!(matches!(
+            restored.files[0].status,
+            FileOperationStatus::Conflict
+        ));
+        assert_eq!(fs::read(&external).unwrap(), b"external");
+        assert!(
+            fs::symlink_metadata(&target)
+                .unwrap()
+                .file_type()
+                .is_symlink()
         );
     }
 }

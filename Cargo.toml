@@ -3,9 +3,12 @@ members = ["crates/speedreplace-core", "apps/desktop/src-tauri"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 license = "MIT"
+authors = ["StayHomeLabNet"]
+repository = "https://github.com/StayHomeLabNet/SpeedReplace"
+homepage = "https://github.com/StayHomeLabNet/SpeedReplace"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

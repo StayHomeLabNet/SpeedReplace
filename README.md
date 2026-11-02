@@ -2,6 +2,10 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
+[![CI](https://github.com/StayHomeLabNet/SpeedReplace/actions/workflows/ci.yml/badge.svg)](https://github.com/StayHomeLabNet/SpeedReplace/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/StayHomeLabNet/SpeedReplace)](https://github.com/StayHomeLabNet/SpeedReplace/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 SpeedReplace is a cross-platform desktop application for fast, safe batch text
 replacement.
 
@@ -22,7 +26,7 @@ file-format handling and safeguards against accidental data loss.
 - React and TypeScript user interface
 - Windows, macOS, and Linux
 
-## v1.0.0 features
+## Features
 
 - Files and recursive folder targets
 - Literal, regular-expression, and multiline replacement
@@ -35,21 +39,23 @@ file-format handling and safeguards against accidental data loss.
 - Drag and drop
 - Simple and advanced modes
 
-The implementation specification is in
+The original design baseline and roadmap are in
 [docs/DESIGN_V1.md](docs/DESIGN_V1.md).
 
 ## Project status
 
-SpeedReplace v1.0.0 is the first stable release. It includes the independent Rust engine,
+SpeedReplace v1.0.1 is the current stable release. It includes the independent Rust engine,
 Tauri command layer, React desktop interface, verified backup/apply/undo flow,
 and a cross-platform CI definition. See the [user guide](docs/USER_GUIDE.md)
 for the workflow and safety behavior.
 
 ## Release
 
-The current stable release is **v1.0.0**. See the bilingual
+The current stable release is **v1.0.1**. See the bilingual
 [release notes](RELEASE_NOTES.md) for features, supported packages, validation,
-and distribution notes.
+and distribution notes. Download installers from the
+[v1.0.1 release](https://github.com/StayHomeLabNet/SpeedReplace/releases/tag/v1.0.1)
+and verify them with the attached `SHA256SUMS.txt`.
 
 ## Development
 
@@ -83,6 +89,11 @@ Workflow artifacts are retained for 30 days.
 English is the default UI language, and users can switch languages from the
 application header. New languages are added as automatically discovered,
 type-checked locale files. See [docs/LOCALIZATION.md](docs/LOCALIZATION.md).
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Report
+suspected vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 The software is released under the MIT License. Public binaries still require
 platform signing/notarization credentials owned by the distributor.

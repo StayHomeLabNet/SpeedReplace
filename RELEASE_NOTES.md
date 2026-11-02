@@ -1,3 +1,75 @@
+# SpeedReplace v1.0.1
+
+Release date: November 2, 2026
+
+## English
+
+SpeedReplace v1.0.1 is a public-readiness and safety update.
+
+### Changes
+
+- Reject symbolic-link targets during discovery and immediately before writing,
+  preventing link replacement and time-of-check/time-of-use surprises.
+- Require canonical UUID operation identifiers and validate Undo manifest
+  identity and schema.
+- Resolve backups from the application-controlled object directory instead of
+  trusting a stored backup path.
+- Add four safety regression tests, bringing the Rust test suite to 16 tests.
+- Replace the Tauri template artwork with a dedicated SpeedReplace icon for all
+  desktop platforms.
+- Pin GitHub Actions to immutable commit SHAs and update them to current
+  Node.js 24-based releases.
+- Add automated npm and RustSec audits, Dependabot configuration, a security
+  policy, contribution guidance, repository metadata, and release checksums.
+- Update the `crc32fast` transitive dependency from 1.5.3 to 1.5.4.
+
+### Validation
+
+- All 16 Rust tests passed.
+- Rust formatting and Clippy static analysis passed.
+- npm reported no known production dependency vulnerabilities.
+- RustSec reported no known vulnerabilities. Two warnings remain in Tauri's
+  Linux GTK3 dependency chain: RUSTSEC-2024-0370 and RUSTSEC-2024-0429. The
+  application does not directly call the affected APIs; these remain monitored
+  until the upstream GUI stack migrates.
+- TypeScript, Vite, and Tauri production builds passed.
+
+### Distribution note
+
+Packages remain unsigned and may trigger an operating-system security warning.
+Verify downloads with the `SHA256SUMS.txt` attached to the GitHub Release.
+
+---
+
+## 日本語
+
+SpeedReplace v1.0.1は、公開準備と安全性強化のためのアップデートです。
+
+### 変更内容
+
+- 検索時と書き込み直前にシンボリックリンクを拒否し、リンクの置き換えやTOCTOU問題を防止
+- 操作IDを正規形のUUIDに限定し、UndoマニフェストのIDとスキーマを検証
+- 保存されたパスを信頼せず、アプリが管理するオブジェクトディレクトリからバックアップを解決
+- 安全性の回帰テスト4件を追加し、Rustテストを16件に拡充
+- Tauriの初期テンプレート画像を、各デスクトップOS向けのSpeedReplace専用アイコンに変更
+- GitHub Actionsを不変のコミットSHAで固定し、Node.js 24対応の現行版へ更新
+- npm・RustSec監査、Dependabot、セキュリティポリシー、コントリビューションガイド、リポジトリ情報、リリースチェックサムを追加
+- 推移的依存関係`crc32fast`を1.5.3から1.5.4へ更新
+
+### 検証結果
+
+- Rustテスト16件がすべて合格
+- Rustフォーマット検査とClippy静的解析が合格
+- npmの既知の本番依存脆弱性は0件
+- RustSecの既知脆弱性は0件。TauriのLinux GTK3依存連鎖にRUSTSEC-2024-0370とRUSTSEC-2024-0429の警告が残りますが、アプリは対象APIを直接使用しません。上流GUIスタックの移行まで監視を継続
+- TypeScript、Vite、Tauriの製品ビルドが合格
+
+### 配布時の注意
+
+パッケージは引き続き未署名のため、OSのセキュリティ警告が表示される場合があります。GitHub Releaseに添付された`SHA256SUMS.txt`でダウンロードを検証できます。
+
+---
+
 # SpeedReplace v1.0.0
 
 Release date: November 2, 2026

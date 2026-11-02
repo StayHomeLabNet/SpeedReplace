@@ -1,4 +1,8 @@
-# SpeedReplace v1.0 user guide
+# SpeedReplace v1.0.1 user guide
+
+The interface starts in English. Use the language selector in the application
+header to switch between English and Japanese. The selection is retained on
+the device.
 
 ## Safe replacement workflow
 
@@ -52,4 +56,10 @@ files are reported as conflicts and skipped.
 
 Backups and manifests are stored in the operating system's application-data
 directory, outside the target tree.
+
+## Symbolic links
+
+SpeedReplace skips symbolic-link targets and does not follow directory links.
+If a file is replaced with a symbolic link after preview, applying or undoing
+the operation reports a conflict instead of modifying the link or its target.
 

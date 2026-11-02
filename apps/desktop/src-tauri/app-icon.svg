@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="SpeedReplace">
+  <defs>
+    <linearGradient id="background" x1="120" y1="80" x2="904" y2="944" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#2478e5"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="220" y1="160" x2="760" y2="860" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="url(#background)"/>
+  <circle cx="324" cy="246" r="280" fill="url(#highlight)"/>
+  <path d="M246 360h470" fill="none" stroke="#ffffff" stroke-width="76" stroke-linecap="round"/>
+  <path d="m654 272 112 88-112 88" fill="none" stroke="#ffffff" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M778 664H308" fill="none" stroke="#ffffff" stroke-width="76" stroke-linecap="round"/>
+  <path d="m370 576-112 88 112 88" fill="none" stroke="#ffffff" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
