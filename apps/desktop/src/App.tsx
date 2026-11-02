@@ -44,6 +44,7 @@ function App() {
   const [error, setError] = useState<UiError>({});
   const [history, setHistory] = useState<OperationManifest[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showUnsupportedFiles, setShowUnsupportedFiles] = useState(false);
 
   function buildRequest(): ScanRequest {
     return {
@@ -61,6 +62,16 @@ function App() {
   const stale = useMemo(
     () => (scan ? JSON.stringify(scan.request) !== JSON.stringify(buildRequest()) : false),
     [scan, targets, rules, includes, excludes, recursive, maxMiB],
+  );
+
+  const unsupportedFileCount = useMemo(
+    () => scan?.files.filter((file) => file.error !== null).length ?? 0,
+    [scan],
+  );
+
+  const visibleFiles = useMemo(
+    () => scan?.files.filter((file) => showUnsupportedFiles || file.error === null) ?? [],
+    [scan, showUnsupportedFiles],
   );
 
   useEffect(() => {
@@ -292,15 +303,28 @@ function App() {
         <section className="panel preview-panel">
           <div className="section-heading">
             <div><span className="step">3</span><h2>{t("preview.title")}</h2></div>
-            {scan && <span className="summary">{count("file", scan.summary.changed)} · {count("match", scan.summary.matches)}</span>}
+            <div className="preview-heading-actions">
+              <label className="show-unsupported">
+                <input
+                  type="checkbox"
+                  checked={showUnsupportedFiles}
+                  disabled={!unsupportedFileCount}
+                  onChange={(event) => setShowUnsupportedFiles(event.target.checked)}
+                />
+                {t("preview.showUnsupported", { count: unsupportedFileCount })}
+              </label>
+              {scan && <span className="summary">{count("file", scan.summary.changed)} · {count("match", scan.summary.matches)}</span>}
+            </div>
           </div>
           {stale && <div className="notice warning">{t("preview.stale")}</div>}
           {displayedError && <div className="notice error" role="alert">{displayedError}</div>}
           {!scan ? (
             <div className="empty-preview"><span>{t("preview.empty")}</span></div>
+          ) : !visibleFiles.length ? (
+            <div className="empty-preview"><span>{t("preview.noSupportedFiles")}</span></div>
           ) : (
             <div className="file-list">
-              {scan.files.map((file: FilePreview) => (
+              {visibleFiles.map((file: FilePreview) => (
                 <article className={`file-card ${file.error ? "has-error" : ""}`} key={file.path}>
                   <div className="file-row">
                     <input type="checkbox" aria-label={t("preview.changeTarget")} disabled={!file.changed} checked={selected.has(file.path)} onChange={() => toggleSelected(file.path)} />

@@ -1,10 +1,28 @@
-# SpeedReplace
+# ⚡ SpeedReplace
+
+## Fast, safe cross-platform batch text replacement
+
+**SpeedReplace previews changes before applying them, preserves text encoding and
+line endings, and creates verified backups for safe Undo.**
 
 [English](README.md) | [日本語](README.ja.md)
+
+[Features](#features) ・ [Supported file formats](#supported-file-formats) ・ [Release](#release) ・ [Development](#development) ・ [Localization](#localization) ・ [Contributing and security](#contributing-and-security)
 
 [![CI](https://github.com/StayHomeLabNet/SpeedReplace/actions/workflows/ci.yml/badge.svg)](https://github.com/StayHomeLabNet/SpeedReplace/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/StayHomeLabNet/SpeedReplace)](https://github.com/StayHomeLabNet/SpeedReplace/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-orange)
+![App](https://img.shields.io/badge/app-Tauri%202-purple)
+![Files](https://img.shields.io/badge/files-plain%20text-brightgreen)
+![Encoding](https://img.shields.io/badge/encoding-UTF--8%20%7C%20UTF--16%20%7C%20Japanese%20legacy-lightgrey)
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20StayHomeLabNet-ff5e5b?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/stayhomelabnet)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support%20StayHomeLabNet-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/stayhomelabnet)
+
+**If SpeedReplace is useful to you, please consider supporting the project.**
+
+---
 
 SpeedReplace is a cross-platform desktop application for fast, safe batch text
 replacement.
@@ -38,6 +56,28 @@ file-format handling and safeguards against accidental data loss.
 - Automatic backup and conflict-aware undo
 - Drag and drop
 - Simple and advanced modes
+
+## Supported file formats
+
+SpeedReplace works with plain-text files. Support is determined by file content
+and encoding, not only by the filename extension. Common examples include:
+
+- Text and delimited data: `.txt`, `.csv`, `.tsv`, `.log`
+- Documents and structured text: `.md`, `.json`, `.jsonl`, `.xml`, `.html`,
+  `.htm`, `.yaml`, `.yml`, `.toml`
+- Configuration: `.ini`, `.cfg`, `.conf`, `.properties`, `.env`
+- Source code and scripts, including `.rs`, `.js`, `.ts`, `.tsx`, `.jsx`,
+  `.py`, `.java`, `.c`, `.cpp`, `.h`, `.cs`, `.go`, `.sh`, and `.ps1`
+
+Supported encodings are UTF-8, UTF-16 LE/BE, Shift_JIS, EUC-JP, ISO-2022-JP,
+and Windows-1252. UTF-8 and UTF-16 BOMs are preserved. Files must pass exact
+decoding and round-trip validation before replacement.
+
+Binary and container formats such as `.docx`, `.xlsx`, `.pdf`, archives,
+databases, images, audio, and video are not supported. Unsupported files are
+hidden from the preview by default and can be reviewed with **Show unsupported
+files**. Structured formats are processed as text; SpeedReplace does not parse
+CSV, JSON, XML, or source-code syntax.
 
 The original design baseline and roadmap are in
 [docs/DESIGN_V1.md](docs/DESIGN_V1.md).

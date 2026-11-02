@@ -1,10 +1,27 @@
-# SpeedReplace
+# ⚡ SpeedReplace
+
+## 高速かつ安全なクロスプラットフォーム対応一括テキスト置換ツール
+
+**SpeedReplaceは変更を適用する前に差分をプレビューし、文字コードと改行コードを維持しながら、安全なUndoのための検証済みバックアップを作成します。**
 
 [English](README.md) | [日本語](README.ja.md)
+
+[機能](#機能) ・ [対応ファイル形式](#対応ファイル形式) ・ [リリース](#リリース) ・ [開発](#開発) ・ [多言語化](#多言語化) ・ [コントリビューションとセキュリティ](#コントリビューションとセキュリティ)
 
 [![CI](https://github.com/StayHomeLabNet/SpeedReplace/actions/workflows/ci.yml/badge.svg)](https://github.com/StayHomeLabNet/SpeedReplace/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/StayHomeLabNet/SpeedReplace)](https://github.com/StayHomeLabNet/SpeedReplace/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-orange)
+![App](https://img.shields.io/badge/app-Tauri%202-purple)
+![Files](https://img.shields.io/badge/files-plain%20text-brightgreen)
+![Encoding](https://img.shields.io/badge/encoding-UTF--8%20%7C%20UTF--16%20%7C%20Japanese%20legacy-lightgrey)
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20StayHomeLabNet-ff5e5b?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/stayhomelabnet)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support%20StayHomeLabNet-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/stayhomelabnet)
+
+**SpeedReplaceが役に立ったら、ぜひサポートをご検討ください。**
+
+---
 
 SpeedReplaceは、高速かつ安全にテキストを一括置換するためのクロスプラットフォーム対応デスクトップアプリです。
 
@@ -36,6 +53,19 @@ SpeedReplaceは、高速かつ安全にテキストを一括置換するため�
 - 自動バックアップと競合検出付きUndo
 - ドラッグ＆ドロップ
 - シンプルモードと詳細モード
+
+## 対応ファイル形式
+
+SpeedReplaceはプレーンテキストファイルを処理します。対応可否は拡張子だけではなく、ファイルの内容と文字コードで判定されます。主な例は次の通りです。
+
+- テキスト・区切りデータ：`.txt`、`.csv`、`.tsv`、`.log`
+- 文書・構造化テキスト：`.md`、`.json`、`.jsonl`、`.xml`、`.html`、`.htm`、`.yaml`、`.yml`、`.toml`
+- 設定ファイル：`.ini`、`.cfg`、`.conf`、`.properties`、`.env`
+- ソースコード・スクリプト：`.rs`、`.js`、`.ts`、`.tsx`、`.jsx`、`.py`、`.java`、`.c`、`.cpp`、`.h`、`.cs`、`.go`、`.sh`、`.ps1`など
+
+対応文字コードはUTF-8、UTF-16 LE/BE、Shift_JIS、EUC-JP、ISO-2022-JP、Windows-1252です。UTF-8とUTF-16のBOMは維持されます。置換を行う前に、厳密なデコードと往復変換の検証に合格する必要があります。
+
+`.docx`、`.xlsx`、`.pdf`、圧縮ファイル、データベース、画像、音声、動画などのバイナリ・コンテナ形式には対応していません。非対応ファイルはデフォルトでプレビューから非表示となり、**非対応ファイルを表示**で確認できます。構造化形式もテキストとして処理され、CSV、JSON、XML、ソースコードの構文解析は行いません。
 
 当初の設計ベースラインとロードマップは[docs/DESIGN_V1.md](docs/DESIGN_V1.md)を参照してください。
 
