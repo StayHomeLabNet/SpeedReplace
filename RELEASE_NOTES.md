@@ -1,4 +1,6 @@
-# SpeedReplace v1.1.0 (Unreleased)
+# SpeedReplace v1.1.0
+
+Release date: November 5, 2026
 
 ## English
 
@@ -21,6 +23,18 @@
 - TypeScript checking and the Vite production build passed.
 - CLI help and read-only JSON scan smoke tests passed.
 
+### Distribution packages
+
+- Windows x64: MSI, NSIS (`.exe`), and `speedreplace.exe` CLI
+- Linux x64: Debian (`.deb`), AppImage, and `speedreplace` CLI
+- macOS Universal: DMG and Universal `speedreplace` CLI for Apple Silicon and
+  Intel Macs
+
+### Distribution note
+
+Packages are unsigned and may trigger an operating-system security warning.
+Verify downloads with the attached `SHA256SUMS.txt`.
+
 ---
 
 ## 日本語
@@ -41,6 +55,16 @@
 - Rustフォーマット検査とClippy静的解析が合格
 - TypeScript型検査とVite製品ビルドが合格
 - CLIヘルプと読み取り専用JSONスキャンのスモークテストが合格
+
+### 配布パッケージ
+
+- Windows x64：MSI、NSIS（`.exe`）、`speedreplace.exe` CLI
+- Linux x64：Debian（`.deb`）、AppImage、`speedreplace` CLI
+- macOS Universal：Apple SiliconとIntel Mac対応のDMGおよびUniversal `speedreplace` CLI
+
+### 配布時の注意
+
+パッケージは未署名のため、OSのセキュリティ警告が表示される場合があります。添付の`SHA256SUMS.txt`でダウンロードを検証してください。
 
 ---
 

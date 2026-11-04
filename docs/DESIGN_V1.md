@@ -12,8 +12,7 @@ Audience: contributors and coding agents
 
 Rule presets, CLI support, progress and cancellation, explicit encoding
 overrides, backup-retention controls, and hunk-level selection were deferred
-from v1.0.1 and have since been implemented on the post-v1.0.2 development
-branch.
+from v1.0.1 and implemented in v1.1.0.
 
 ## 1. Purpose
 

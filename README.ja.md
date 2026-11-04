@@ -80,13 +80,11 @@ SpeedReplaceはプレーンテキストファイルを処理します。対応�
 
 ## プロジェクトの状態
 
-SpeedReplace v1.0.2は現在の安定版です。独立したRustエンジン、Tauriコマンド層、ReactデスクトップUI、検証付きのバックアップ・適用・Undoフロー、クロスプラットフォームCIを含みます。操作方法と安全機能の詳細は[ユーザーガイド](docs/USER_GUIDE.md)を参照してください。
-
-現在のソースツリーは未リリースのv1.1.0開発版で、進捗・キャンセル、プリセット、バックアップ保持設定、文字コード指定、ハンク単位選択、CLIを含みます。
+SpeedReplace v1.1.0は現在の安定版です。独立したRustエンジン、Tauriコマンド層、ReactデスクトップUI、検証付きのバックアップ・適用・Undoフロー、クロスプラットフォームCIを含みます。操作方法と安全機能の詳細は[ユーザーガイド](docs/USER_GUIDE.md)を参照してください。
 
 ## リリース
 
-現在の安定版は **v1.0.2** です。機能、対応パッケージ、検証結果、配布時の注意事項は、英語・日本語併記の[リリースノート](RELEASE_NOTES.md)を参照してください。インストーラーは[v1.0.2 Release](https://github.com/StayHomeLabNet/SpeedReplace/releases/tag/v1.0.2)からダウンロードし、添付の`SHA256SUMS.txt`で検証できます。
+現在の安定版は **v1.1.0** です。機能、対応パッケージ、検証結果、配布時の注意事項は、英語・日本語併記の[リリースノート](RELEASE_NOTES.md)を参照してください。インストーラーは[v1.1.0 Release](https://github.com/StayHomeLabNet/SpeedReplace/releases/tag/v1.1.0)からダウンロードし、添付の`SHA256SUMS.txt`で検証できます。
 
 ## 開発
 
