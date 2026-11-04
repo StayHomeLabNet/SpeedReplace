@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useI18n, type TranslationKey, type TranslationParams } from "./i18n";
@@ -8,6 +9,7 @@ import {
   type FilePreview,
   type OperationManifest,
   type ReplacementRule,
+  type RulePreset,
   type ScanRequest,
   type ScanResult,
   newRule,
@@ -21,6 +23,17 @@ type StatusMessage = {
   values?: Partial<Record<"targets" | "files" | "matches" | "conflicts", number>>;
 };
 type UiError = { key?: TranslationKey; text?: string };
+type ProgressEvent = {
+  jobId: string;
+  progress: { stage: "scanning" | "applying"; completed: number; total: number; currentPath: string | null };
+};
+
+const ENCODINGS = ["UTF-8", "UTF-16LE", "UTF-16BE", "Shift_JIS", "EUC-JP", "ISO-2022-JP", "windows-1252"];
+
+function loadPresets(): RulePreset[] {
+  try { return JSON.parse(localStorage.getItem("speedreplace.presets") ?? "[]"); }
+  catch { return []; }
+}
 
 function shortPath(path: string) {
   const parts = path.split("\\").join("/").split("/");
@@ -45,6 +58,14 @@ function App() {
   const [history, setHistory] = useState<OperationManifest[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showUnsupportedFiles, setShowUnsupportedFiles] = useState(false);
+  const [defaultEncodingOverride, setDefaultEncodingOverride] = useState("");
+  const [encodingOverrides, setEncodingOverrides] = useState<Record<string, string>>({});
+  const [backupRetention, setBackupRetention] = useState(() => Number(localStorage.getItem("speedreplace.backupRetention") ?? 20));
+  const [presets, setPresets] = useState<RulePreset[]>(loadPresets);
+  const [selectedPreset, setSelectedPreset] = useState("");
+  const [selectedHunks, setSelectedHunks] = useState<Map<string, Set<string>>>(new Map());
+  const [activeJob, setActiveJob] = useState("");
+  const [progress, setProgress] = useState<{ stage: "scanning" | "applying"; completed: number; total: number; currentPath: string | null } | null>(null);
 
   function buildRequest(): ScanRequest {
     return {
@@ -56,12 +77,14 @@ function App() {
         recursive,
       },
       rules,
+      encodingOverrides,
+      defaultEncodingOverride: defaultEncodingOverride || null,
     };
   }
 
   const stale = useMemo(
     () => (scan ? JSON.stringify(scan.request) !== JSON.stringify(buildRequest()) : false),
-    [scan, targets, rules, includes, excludes, recursive, maxMiB],
+    [scan, targets, rules, includes, excludes, recursive, maxMiB, encodingOverrides, defaultEncodingOverride],
   );
 
   const unsupportedFileCount = useMemo(
@@ -81,6 +104,22 @@ function App() {
     });
     return () => { void unlisten.then((stop) => stop()); };
   }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen<ProgressEvent>("operation-progress", ({ payload }) => {
+      if (payload.jobId === activeJob) setProgress(payload.progress);
+    });
+    return () => { void unlisten.then((stop) => stop()); };
+  }, [activeJob]);
+
+  useEffect(() => {
+    localStorage.setItem("speedreplace.presets", JSON.stringify(presets));
+  }, [presets]);
+
+  useEffect(() => {
+    localStorage.setItem("speedreplace.backupRetention", String(backupRetention));
+  }, [backupRetention]);
 
   function renderStatus(status: StatusMessage) {
     const params: TranslationParams = {};
@@ -116,6 +155,30 @@ function App() {
     });
   }
 
+  function savePreset() {
+    const name = window.prompt(t("presets.namePrompt"));
+    if (!name?.trim()) return;
+    const preset: RulePreset = { id: crypto.randomUUID(), name: name.trim(), rules: structuredClone(rules) };
+    setPresets((items) => [...items, preset]);
+    setSelectedPreset(preset.id);
+  }
+
+  function loadPreset(id: string) {
+    setSelectedPreset(id);
+    const preset = presets.find((item) => item.id === id);
+    if (preset) setRules(structuredClone(preset.rules).map((rule) => ({ ...rule, id: crypto.randomUUID() })));
+  }
+
+  function deletePreset() {
+    if (!selectedPreset) return;
+    setPresets((items) => items.filter((item) => item.id !== selectedPreset));
+    setSelectedPreset("");
+  }
+
+  async function cancelActiveOperation() {
+    if (activeJob) await invoke("cancel_operation", { jobId: activeJob });
+  }
+
   async function runScan() {
     setError({});
     if (!targets.length) return setError({ key: "error.noTargets" });
@@ -124,18 +187,25 @@ function App() {
     }
     setPhase("scanning");
     setMessage({ key: "message.scanning" });
+    const jobId = crypto.randomUUID();
+    setActiveJob(jobId);
+    setProgress({ stage: "scanning", completed: 0, total: 0, currentPath: null });
     try {
-      const result = await invoke<ScanResult>("scan_files", { request: buildRequest() });
+      const result = await invoke<ScanResult>("scan_files", { jobId, request: buildRequest() });
       setScan(result);
       setSelected(new Set(result.files.filter((file) => file.changed).map((file) => file.path)));
+      setSelectedHunks(new Map(result.files.map((file) => [file.path, new Set(file.hunks.map((hunk) => hunk.id))])));
       setPhase("preview");
       setMessage({
         key: "message.previewSummary",
         values: { files: result.summary.changed, matches: result.summary.matches },
       });
     } catch (reason) {
-      setError({ text: String(reason) });
+      setError(String(reason).includes("cancelled") ? { key: "error.cancelled" } : { text: String(reason) });
       setPhase("idle");
+    } finally {
+      setActiveJob("");
+      setProgress(null);
     }
   }
 
@@ -145,9 +215,18 @@ function App() {
     setPhase("applying");
     setError({});
     setMessage({ key: "message.applying" });
+    const jobId = crypto.randomUUID();
+    setActiveJob(jobId);
+    setProgress({ stage: "applying", completed: 0, total: selected.size, currentPath: null });
     try {
       const operation = await invoke<OperationManifest>("apply_changes", {
-        request: { scan, selectedPaths: Array.from(selected) },
+        jobId,
+        request: {
+          scan,
+          selectedPaths: Array.from(selected),
+          selectedHunks: Object.fromEntries(Array.from(selected).map((path) => [path, Array.from(selectedHunks.get(path) ?? [])])),
+          backupRetention,
+        },
       });
       const changed = operation.files.filter((file) => file.status === "changed").length;
       const conflicts = operation.files.filter((file) => file.status === "conflict").length;
@@ -160,8 +239,19 @@ function App() {
       setSelected(new Set());
       await loadHistory();
     } catch (reason) {
-      setError({ text: String(reason) });
-      setPhase("preview");
+      if (String(reason).includes("cancelled")) {
+        setError({ key: "error.cancelled" });
+        setScan(null);
+        setSelected(new Set());
+        setPhase("complete");
+        await loadHistory();
+      } else {
+        setError({ text: String(reason) });
+        setPhase("preview");
+      }
+    } finally {
+      setActiveJob("");
+      setProgress(null);
     }
   }
 
@@ -199,12 +289,14 @@ function App() {
     }
   }
 
-  function toggleSelected(path: string) {
-    setSelected((current) => {
-      const next = new Set(current);
-      next.has(path) ? next.delete(path) : next.add(path);
-      return next;
-    });
+  function toggleSelected(file: FilePreview) {
+    const shouldSelect = !selected.has(file.path);
+    const nextPaths = new Set(selected);
+    shouldSelect ? nextPaths.add(file.path) : nextPaths.delete(file.path);
+    setSelected(nextPaths);
+    const nextHunks = new Map(selectedHunks);
+    nextHunks.set(file.path, shouldSelect ? new Set(file.hunks.map((hunk) => hunk.id)) : new Set());
+    setSelectedHunks(nextHunks);
   }
 
   function toggleExpanded(path: string) {
@@ -213,6 +305,17 @@ function App() {
       next.has(path) ? next.delete(path) : next.add(path);
       return next;
     });
+  }
+
+  function toggleHunk(file: FilePreview, hunkId: string) {
+    const nextHunks = new Map(selectedHunks);
+    const fileHunks = new Set(nextHunks.get(file.path) ?? []);
+    fileHunks.has(hunkId) ? fileHunks.delete(hunkId) : fileHunks.add(hunkId);
+    nextHunks.set(file.path, fileHunks);
+    setSelectedHunks(nextHunks);
+    const nextPaths = new Set(selected);
+    fileHunks.size ? nextPaths.add(file.path) : nextPaths.delete(file.path);
+    setSelected(nextPaths);
   }
 
   const displayedError = error.key ? t(error.key) : error.text;
@@ -264,13 +367,28 @@ function App() {
               <label>{t("targets.excludes")}<textarea value={excludes} onChange={(event) => setExcludes(event.target.value)} /></label>
               <label className="inline"><input type="checkbox" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />{t("targets.recursive")}</label>
               <label className="inline">{t("targets.maxSize")} <input className="number" type="number" min={1} value={maxMiB} onChange={(event) => setMaxMiB(Number(event.target.value))} /> MiB</label>
+              <label>{t("settings.encoding")}
+                <select value={defaultEncodingOverride} onChange={(event) => setDefaultEncodingOverride(event.target.value)}>
+                  <option value="">{t("settings.encodingAuto")}</option>
+                  {ENCODINGS.map((encoding) => <option key={encoding}>{encoding}</option>)}
+                </select>
+              </label>
+              <label className="inline">{t("settings.backupRetention")} <input className="number" type="number" min={1} value={backupRetention} onChange={(event) => setBackupRetention(Math.max(1, Number(event.target.value)))} /> {t("settings.operations")}</label>
             </div>
           )}
         </section>
         <section className="panel">
           <div className="section-heading">
             <div><span className="step">2</span><h2>{t("rules.title")}</h2></div>
-            {mode === "advanced" && <button className="ghost" onClick={() => setRules([...rules, newRule()])}>{t("rules.add")}</button>}
+            {mode === "advanced" && <div className="preset-actions">
+              <select aria-label={t("presets.select")} value={selectedPreset} onChange={(event) => loadPreset(event.target.value)}>
+                <option value="">{t("presets.select")}</option>
+                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </select>
+              <button className="ghost" onClick={savePreset}>{t("presets.save")}</button>
+              <button className="ghost danger" disabled={!selectedPreset} onClick={deletePreset}>{t("presets.delete")}</button>
+              <button className="ghost" onClick={() => setRules([...rules, newRule()])}>{t("rules.add")}</button>
+            </div>}
           </div>
           <div className="rules">
             {rules.map((rule, index) => (
@@ -326,20 +444,41 @@ function App() {
               {visibleFiles.map((file: FilePreview) => (
                 <article className={`file-card ${file.error ? "has-error" : ""}`} key={file.path}>
                   <div className="file-row">
-                    <input type="checkbox" aria-label={t("preview.changeTarget")} disabled={!file.changed} checked={selected.has(file.path)} onChange={() => toggleSelected(file.path)} />
+                    <input type="checkbox" aria-label={t("preview.changeTarget")} disabled={!file.changed} checked={selected.has(file.path)} onChange={() => toggleSelected(file)} />
                     <button className="file-name" onClick={() => toggleExpanded(file.path)} title={file.path}>{file.changed ? (expanded.has(file.path) ? "▾" : "▸") : "·"} {shortPath(file.path)}</button>
                     {file.encoding && <span className="badge">{file.encoding.name}{file.encoding.hasBom ? " BOM" : ""}</span>}
                     <span className="badge">{file.lineEndings}</span>
                     <span className="matches">{count("match", file.matchCount)}</span>
                   </div>
                   {file.error && <div className="file-error">{file.error}</div>}
-                  {expanded.has(file.path) && file.diff && <pre className="diff">{file.diff}</pre>}
+                  {mode === "advanced" && (
+                    <label className="file-encoding">{t("settings.fileEncoding")}
+                      <select value={encodingOverrides[file.path] ?? ""} onChange={(event) => setEncodingOverrides((items) => {
+                        const next = { ...items };
+                        if (event.target.value) next[file.path] = event.target.value;
+                        else delete next[file.path];
+                        return next;
+                      })}>
+                        <option value="">{t("settings.encodingAuto")}</option>
+                        {ENCODINGS.map((encoding) => <option key={encoding}>{encoding}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {expanded.has(file.path) && file.hunks.length > 0 && <div className="hunk-list">
+                    {file.hunks.map((hunk) => <label className="hunk" key={hunk.id}>
+                      <span><input type="checkbox" checked={selectedHunks.get(file.path)?.has(hunk.id) ?? false} onChange={() => toggleHunk(file, hunk.id)} />{t("preview.hunk")}</span>
+                      <pre className="diff">{hunk.diff}</pre>
+                    </label>)}
+                  </div>}
                 </article>
               ))}
             </div>
           )}
           <div className="actionbar">
-            <div><strong>{renderStatus(message)}</strong><small>{t("preview.preserve")}</small></div>
+            <div><strong>{renderStatus(message)}</strong><small>{t("preview.preserve")}</small>
+              {progress && <div className="progress-wrap"><progress max={Math.max(progress.total, 1)} value={progress.total ? progress.completed : 0} /><small>{progress.total ? `${progress.completed}/${progress.total}` : t("preview.discovering", { count: progress.completed })}{progress.currentPath ? ` · ${shortPath(progress.currentPath)}` : ""}</small></div>}
+            </div>
+            {(phase === "scanning" || phase === "applying") && <button className="danger" onClick={cancelActiveOperation}>{t("preview.cancel")}</button>}
             <button className="secondary" disabled={phase === "scanning" || phase === "applying"} onClick={runScan}>
               {phase === "scanning" ? t("preview.scanning") : scan && stale ? t("preview.rescan") : t("preview.scan")}
             </button>

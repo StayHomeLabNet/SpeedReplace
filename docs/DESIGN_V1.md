@@ -10,9 +10,10 @@ Audience: contributors and coding agents
 > behavior, use the [README](../README.md), [user guide](USER_GUIDE.md), and
 > [release notes](../RELEASE_NOTES.md) as the authoritative sources.
 
-Deferred items include rule presets, CLI support, progress and cancellation,
-explicit encoding overrides, backup-retention controls, and hunk-level
-selection. They remain roadmap candidates rather than v1.0.1 features.
+Rule presets, CLI support, progress and cancellation, explicit encoding
+overrides, backup-retention controls, and hunk-level selection were deferred
+from v1.0.1 and have since been implemented on the post-v1.0.2 development
+branch.
 
 ## 1. Purpose
 

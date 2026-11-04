@@ -53,7 +53,13 @@ file-format handling and safeguards against accidental data loss.
 - UTF-8, UTF-16, and Japanese legacy-encoding support
 - Encoding, BOM, and line-ending preservation
 - Per-file diff preview and dry run
+- Per-hunk selection inside each file preview
+- Live scan/apply progress with safe cancellation between files
+- Reusable rule presets
+- Automatic backup retention limits
+- Automatic or manually overridden text encoding
 - Automatic backup and conflict-aware undo
+- A standalone CLI using the same safe replacement engine
 - Drag and drop
 - Simple and advanced modes
 
@@ -100,6 +106,10 @@ Tauri command layer, React desktop interface, verified backup/apply/undo flow,
 and a cross-platform CI definition. See the [user guide](docs/USER_GUIDE.md)
 for the workflow and safety behavior.
 
+The current source tree is the unreleased v1.1.0 development version with
+progress/cancellation, presets, retention controls, encoding overrides,
+hunk-level selection, and the CLI.
+
 ## Release
 
 The current stable release is **v1.0.2**. See the bilingual
@@ -120,6 +130,20 @@ pnpm --dir apps/desktop build
 pnpm --dir apps/desktop tauri dev
 ```
 
+Build and use the command-line interface with:
+
+```bash
+cargo build --release -p speedreplace-cli
+speedreplace scan ./src --search old --replacement new
+speedreplace replace ./src --search old --replacement new --retain 20
+speedreplace history --backup-dir .speedreplace
+speedreplace undo <operation-id> --backup-dir .speedreplace
+```
+
+`scan` is read-only. `replace` creates verified backups first. Add `--regex`,
+`--include`, `--exclude`, `--encoding`, or `--rules rules.json` as needed; run
+`speedreplace <command> --help` for the complete options.
+
 Create a local production bundle with:
 
 ```bash
@@ -134,6 +158,9 @@ then download:
 - `SpeedReplace-Linux-x64`: Debian (`.deb`) and AppImage packages
 - `SpeedReplace-macOS-Universal`: Universal DMG for Apple Silicon and Intel
   Macs
+
+Each workflow artifact also contains the platform-native `speedreplace` CLI
+(`speedreplace.exe` on Windows); the macOS CLI is Universal.
 
 Workflow artifacts are retained for 30 days.
 

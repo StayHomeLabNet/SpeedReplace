@@ -1,15 +1,16 @@
 use crate::encoding::{decode, encode, line_endings};
 use crate::{
-    FilePreview, ReplacementRule, Result, RuleMode, RuleValidation, ScanRequest, ScanResult,
-    ScanSummary, ValidationLevel, io_error,
+    DiffHunk, FilePreview, OperationProgress, ProgressStage, ReplacementRule, Result, RuleMode,
+    RuleValidation, ScanRequest, ScanResult, ScanSummary, ValidationLevel, io_error,
 };
 use chrono::Utc;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::{NoExpand, Regex, RegexBuilder};
-use similar::TextDiff;
+use similar::{DiffTag, TextDiff};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -108,6 +109,14 @@ pub(crate) fn transform(text: &str, rules: &[ReplacementRule]) -> Result<(String
 }
 
 pub fn scan(request: ScanRequest) -> Result<ScanResult> {
+    scan_with_progress(request, &AtomicBool::new(false), |_| {})
+}
+
+pub fn scan_with_progress(
+    request: ScanRequest,
+    cancelled: &AtomicBool,
+    mut progress: impl FnMut(OperationProgress),
+) -> Result<ScanResult> {
     let errors = validate_rules(&request.rules)
         .into_iter()
         .filter(|item| matches!(item.level, ValidationLevel::Error))
@@ -119,15 +128,41 @@ pub fn scan(request: ScanRequest) -> Result<ScanResult> {
 
     let include = build_globs(&request.filters.includes)?;
     let exclude = build_globs(&request.filters.excludes)?;
-    let files = discover(&request, include.as_ref(), exclude.as_ref());
+    let files = discover(
+        &request,
+        include.as_ref(),
+        exclude.as_ref(),
+        cancelled,
+        &mut progress,
+    )?;
     let mut summary = ScanSummary {
         discovered: files.len(),
         ..Default::default()
     };
     let mut previews = Vec::with_capacity(files.len());
 
-    for path in files {
-        match preview_file(&path, &request.rules, request.filters.max_file_size) {
+    let total = files.len();
+    for (index, path) in files.into_iter().enumerate() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(crate::Error::Cancelled);
+        }
+        progress(OperationProgress {
+            stage: ProgressStage::Scanning,
+            completed: index,
+            total,
+            current_path: Some(path.to_string_lossy().into_owned()),
+        });
+        let encoding_override = request
+            .encoding_overrides
+            .get(path.to_string_lossy().as_ref())
+            .or(request.default_encoding_override.as_ref())
+            .map(String::as_str);
+        match preview_file(
+            &path,
+            &request.rules,
+            request.filters.max_file_size,
+            encoding_override,
+        ) {
             Ok(preview) => {
                 summary.scanned += 1;
                 if preview.changed {
@@ -146,6 +181,7 @@ pub fn scan(request: ScanRequest) -> Result<ScanResult> {
                     line_endings: "unknown".to_owned(),
                     match_count: 0,
                     diff: String::new(),
+                    hunks: vec![],
                     changed: false,
                     selected: false,
                     warnings: vec![],
@@ -154,6 +190,12 @@ pub fn scan(request: ScanRequest) -> Result<ScanResult> {
             }
         }
     }
+    progress(OperationProgress {
+        stage: ProgressStage::Scanning,
+        completed: total,
+        total,
+        current_path: None,
+    });
 
     previews.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(ScanResult {
@@ -185,9 +227,14 @@ fn discover(
     request: &ScanRequest,
     include: Option<&GlobSet>,
     exclude: Option<&GlobSet>,
-) -> Vec<PathBuf> {
+    cancelled: &AtomicBool,
+    progress: &mut impl FnMut(OperationProgress),
+) -> Result<Vec<PathBuf>> {
     let mut found = BTreeSet::new();
     for target in &request.targets {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(crate::Error::Cancelled);
+        }
         let target = PathBuf::from(target);
         let target_type = fs::symlink_metadata(&target)
             .ok()
@@ -209,12 +256,21 @@ fn discover(
             walker = walker.max_depth(1);
         }
         for entry in walker.into_iter().filter_map(std::result::Result::ok) {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(crate::Error::Cancelled);
+            }
             if entry.file_type().is_file() && accepted(entry.path(), include, exclude) {
                 found.insert(entry.into_path());
+                progress(OperationProgress {
+                    stage: ProgressStage::Scanning,
+                    completed: found.len(),
+                    total: 0,
+                    current_path: None,
+                });
             }
         }
     }
-    found.into_iter().collect()
+    Ok(found.into_iter().collect())
 }
 
 fn accepted(path: &Path, include: Option<&GlobSet>, exclude: Option<&GlobSet>) -> bool {
@@ -225,7 +281,12 @@ fn accepted(path: &Path, include: Option<&GlobSet>, exclude: Option<&GlobSet>) -
     include.is_none_or(|patterns| patterns.is_match(&normalized))
 }
 
-fn preview_file(path: &Path, rules: &[ReplacementRule], max_size: u64) -> Result<FilePreview> {
+fn preview_file(
+    path: &Path,
+    rules: &[ReplacementRule],
+    max_size: u64,
+    encoding_override: Option<&str>,
+) -> Result<FilePreview> {
     let metadata = fs::metadata(path).map_err(|error| io_error(path, error))?;
     if metadata.len() > max_size {
         return Err(crate::Error::Encoding(format!(
@@ -238,19 +299,25 @@ fn preview_file(path: &Path, rules: &[ReplacementRule], max_size: u64) -> Result
         return Err(crate::Error::Encoding("binary file skipped".to_owned()));
     }
     let source_hash = blake3::hash(&bytes).to_hex().to_string();
-    let decoded = decode(&bytes)?;
+    let decoded = decode(&bytes, encoding_override)?;
     let endings = line_endings(&decoded.text);
     let (after, matches) = transform(&decoded.text, rules)?;
     let output = encode(&after, &decoded)?;
     let changed = output != bytes;
+    let text_diff = TextDiff::from_lines(&decoded.text, &after);
     let diff = if changed {
-        TextDiff::from_lines(&decoded.text, &after)
+        text_diff
             .unified_diff()
             .header("before", "after")
             .context_radius(3)
             .to_string()
     } else {
         String::new()
+    };
+    let hunks = if changed {
+        build_hunks(&text_diff)
+    } else {
+        vec![]
     };
     Ok(FilePreview {
         path: path.to_string_lossy().into_owned(),
@@ -260,6 +327,7 @@ fn preview_file(path: &Path, rules: &[ReplacementRule], max_size: u64) -> Result
         line_endings: endings.clone(),
         match_count: matches,
         diff,
+        hunks,
         changed,
         selected: changed,
         warnings: if endings == "mixed" {
@@ -269,6 +337,52 @@ fn preview_file(path: &Path, rules: &[ReplacementRule], max_size: u64) -> Result
         },
         error: None,
     })
+}
+
+pub(crate) fn build_hunks_for_text(source: &str, result: &str) -> Vec<DiffHunk> {
+    let diff = TextDiff::from_lines(source, result);
+    build_hunks(&diff)
+}
+
+fn build_hunks(diff: &TextDiff<'_, '_, '_, str>) -> Vec<DiffHunk> {
+    diff.ops()
+        .iter()
+        .filter(|op| op.tag() != DiffTag::Equal)
+        .enumerate()
+        .map(|(index, op)| {
+            let old = op.old_range();
+            let new = op.new_range();
+            let replacement = diff.new_slices()[new.clone()].concat();
+            let mut display = format!(
+                "@@ -{},{} +{},{} @@\n",
+                old.start + 1,
+                old.len(),
+                new.start + 1,
+                new.len()
+            );
+            for line in &diff.old_slices()[old.clone()] {
+                display.push('-');
+                display.push_str(line);
+                if !line.ends_with('\n') {
+                    display.push('\n');
+                }
+            }
+            for line in &diff.new_slices()[new] {
+                display.push('+');
+                display.push_str(line);
+                if !line.ends_with('\n') {
+                    display.push('\n');
+                }
+            }
+            DiffHunk {
+                id: format!("hunk-{index}"),
+                old_start: old.start,
+                old_len: old.len(),
+                replacement,
+                diff: display,
+            }
+        })
+        .collect()
 }
 
 fn looks_binary(bytes: &[u8]) -> bool {
@@ -344,6 +458,8 @@ mod tests {
                 ..Default::default()
             },
             rules: vec![rule("old", "new")],
+            encoding_overrides: Default::default(),
+            default_encoding_override: None,
         })
         .unwrap();
         assert_eq!(result.summary.discovered, 1);
@@ -360,10 +476,32 @@ mod tests {
             targets: vec![path.to_string_lossy().into_owned()],
             filters: crate::FilterSpec::default(),
             rules: vec![rule("old", "new")],
+            encoding_overrides: Default::default(),
+            default_encoding_override: None,
         })
         .unwrap();
         assert!(!result.files[0].changed);
         assert!(result.files[0].error.as_deref().unwrap().contains("binary"));
+    }
+
+    #[test]
+    fn cancelled_scan_stops_before_reading_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sample.txt");
+        fs::write(&path, "old").unwrap();
+        let cancelled = AtomicBool::new(true);
+        let result = scan_with_progress(
+            ScanRequest {
+                targets: vec![path.to_string_lossy().into_owned()],
+                filters: crate::FilterSpec::default(),
+                rules: vec![rule("old", "new")],
+                encoding_overrides: Default::default(),
+                default_encoding_override: None,
+            },
+            &cancelled,
+            |_| {},
+        );
+        assert!(matches!(result, Err(crate::Error::Cancelled)));
     }
 
     #[cfg(unix)]
@@ -381,6 +519,8 @@ mod tests {
             targets: vec![link.to_string_lossy().into_owned()],
             filters: crate::FilterSpec::default(),
             rules: vec![rule("old", "new")],
+            encoding_overrides: Default::default(),
+            default_encoding_override: None,
         })
         .unwrap();
 

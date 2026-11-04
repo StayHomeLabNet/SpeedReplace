@@ -18,8 +18,29 @@ const SUPPORTED: &[&str] = &[
     "windows-1252",
 ];
 
-pub(crate) fn decode(bytes: &[u8]) -> Result<DecodedText> {
-    let (encoding, bom_len, confidence) = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+pub(crate) fn decode(bytes: &[u8], encoding_override: Option<&str>) -> Result<DecodedText> {
+    let detected_bom = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        Some((UTF_8, 3))
+    } else if bytes.starts_with(&[0xFF, 0xFE]) {
+        Some((UTF_16LE, 2))
+    } else if bytes.starts_with(&[0xFE, 0xFF]) {
+        Some((UTF_16BE, 2))
+    } else {
+        None
+    };
+    let (encoding, bom_len, confidence) = if let Some(label) = encoding_override {
+        let encoding = Encoding::for_label(label.as_bytes())
+            .ok_or_else(|| Error::Encoding(format!("unknown encoding override: {label}")))?;
+        if !SUPPORTED.iter().any(|name| *name == encoding.name()) {
+            return Err(Error::Encoding(format!(
+                "encoding override is not supported: {label}"
+            )));
+        }
+        let bom_len = detected_bom
+            .filter(|(bom_encoding, _)| *bom_encoding == encoding)
+            .map_or(0, |(_, len)| len);
+        (encoding, bom_len, "manual")
+    } else if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         (UTF_8, 3, "bom")
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
         (UTF_16LE, 2, "bom")
@@ -131,7 +152,7 @@ mod tests {
     #[test]
     fn utf8_bom_is_preserved() {
         let input = b"\xEF\xBB\xBFhello\r\n";
-        let decoded = decode(input).unwrap();
+        let decoded = decode(input, None).unwrap();
         assert_eq!(decoded.text, "hello\r\n");
         assert!(decoded.info.has_bom);
         assert_eq!(encode(&decoded.text, &decoded).unwrap(), input);
@@ -140,7 +161,7 @@ mod tests {
     #[test]
     fn utf16le_bom_is_preserved() {
         let input = [0xFF, 0xFE, b'a', 0, b'\n', 0];
-        let decoded = decode(&input).unwrap();
+        let decoded = decode(&input, None).unwrap();
         assert_eq!(decoded.text, "a\n");
         assert_eq!(decoded.info.name, "UTF-16LE");
         assert_eq!(encode(&decoded.text, &decoded).unwrap(), input);
@@ -150,7 +171,7 @@ mod tests {
     fn shift_jis_round_trip_is_exact() {
         let (encoded, _, had_errors) = SHIFT_JIS.encode("置換テスト");
         assert!(!had_errors);
-        let decoded = decode(&encoded).unwrap();
+        let decoded = decode(&encoded, None).unwrap();
         assert_eq!(decoded.text, "置換テスト");
         assert_eq!(encode(&decoded.text, &decoded).unwrap(), encoded.as_ref());
     }
@@ -160,5 +181,13 @@ mod tests {
         assert_eq!(line_endings("a\r\nb\r\n"), "CRLF");
         assert_eq!(line_endings("a\nb\n"), "LF");
         assert_eq!(line_endings("a\r\nb\n"), "mixed");
+    }
+
+    #[test]
+    fn manual_encoding_override_is_reported() {
+        let (encoded, _, _) = SHIFT_JIS.encode("置換");
+        let decoded = decode(&encoded, Some("shift_jis")).unwrap();
+        assert_eq!(decoded.info.confidence, "manual");
+        assert_eq!(decoded.text, "置換");
     }
 }

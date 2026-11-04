@@ -1,0 +1,19 @@
+[package]
+name = "speedreplace-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Command-line interface for SpeedReplace"
+
+[[bin]]
+name = "speedreplace"
+path = "src/main.rs"
+
+[dependencies]
+speedreplace-core = { path = "../speedreplace-core" }
+clap.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

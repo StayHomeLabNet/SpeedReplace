@@ -21,6 +21,16 @@ export interface ScanRequest {
     recursive: boolean;
   };
   rules: ReplacementRule[];
+  encodingOverrides: Record<string, string>;
+  defaultEncodingOverride: string | null;
+}
+
+export interface DiffHunk {
+  id: string;
+  oldStart: number;
+  oldLen: number;
+  replacement: string;
+  diff: string;
 }
 
 export interface FilePreview {
@@ -31,10 +41,17 @@ export interface FilePreview {
   lineEndings: string;
   matchCount: number;
   diff: string;
+  hunks: DiffHunk[];
   changed: boolean;
   selected: boolean;
   warnings: string[];
   error: string | null;
+}
+
+export interface RulePreset {
+  id: string;
+  name: string;
+  rules: ReplacementRule[];
 }
 
 export interface ScanResult {

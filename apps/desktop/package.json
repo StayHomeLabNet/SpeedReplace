@@ -1,7 +1,7 @@
 {
   "name": "speedreplace-desktop",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Fast, safe cross-platform batch text replacement",
   "license": "MIT",
   "repository": {

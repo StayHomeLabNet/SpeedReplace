@@ -35,6 +35,7 @@ jobs:
             artifact_paths: |
               target/release/bundle/msi/*.msi
               target/release/bundle/nsis/*.exe
+              target/release/speedreplace.exe
           - name: Linux
             os: ubuntu-24.04
             bundles: deb appimage
@@ -44,6 +45,7 @@ jobs:
             artifact_paths: |
               target/release/bundle/deb/*.deb
               target/release/bundle/appimage/*.AppImage
+              target/release/speedreplace
           - name: macOS Universal
             os: macos-15
             bundles: dmg
@@ -52,6 +54,7 @@ jobs:
             artifact_name: SpeedReplace-macOS-Universal
             artifact_paths: |
               target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              target/universal-apple-darwin/release/speedreplace
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,6 +79,18 @@ jobs:
         run: rustup target add ${{ matrix.rust_targets }}
       - name: Build distribution packages
         run: pnpm --dir apps/desktop tauri build --bundles ${{ matrix.bundles }} ${{ matrix.build_args }}
+      - name: Build CLI
+        if: runner.os != 'macOS'
+        run: cargo build --release -p speedreplace-cli
+      - name: Build Universal macOS CLI
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --release -p speedreplace-cli --target aarch64-apple-darwin
+          cargo build --release -p speedreplace-cli --target x86_64-apple-darwin
+          mkdir -p target/universal-apple-darwin/release
+          lipo -create -output target/universal-apple-darwin/release/speedreplace \
+            target/aarch64-apple-darwin/release/speedreplace \
+            target/x86_64-apple-darwin/release/speedreplace
       - name: Upload distribution packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

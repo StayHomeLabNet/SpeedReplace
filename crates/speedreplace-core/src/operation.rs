@@ -1,18 +1,27 @@
 use crate::encoding::{decode, encode};
-use crate::engine::transform;
+use crate::engine::{build_hunks_for_text, transform};
 use crate::{
-    ApplyRequest, Error, FileOperationStatus, OperationFileRecord, OperationManifest, Result,
-    UndoPreview, UndoRequest, io_error,
+    ApplyRequest, DiffHunk, Error, FileOperationStatus, OperationFileRecord, OperationManifest,
+    OperationProgress, ProgressStage, Result, UndoPreview, UndoRequest, io_error,
 };
 use chrono::Utc;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 
 pub fn apply(request: ApplyRequest) -> Result<OperationManifest> {
+    apply_with_progress(request, &AtomicBool::new(false), |_| {})
+}
+
+pub fn apply_with_progress(
+    request: ApplyRequest,
+    cancelled: &AtomicBool,
+    mut progress: impl FnMut(OperationProgress),
+) -> Result<OperationManifest> {
     let operation_id = Uuid::new_v4().to_string();
     let operation_dir = operation_dir(&request.backup_root, &operation_id)?;
     let objects_dir = operation_dir.join("objects");
@@ -26,12 +35,46 @@ pub fn apply(request: ApplyRequest) -> Result<OperationManifest> {
         created_at: Utc::now().to_rfc3339(),
         files: vec![],
     };
+    write_manifest(&operation_dir, &manifest)?;
 
-    for preview in request.scan.files.iter().filter(|file| {
-        file.changed && file.error.is_none() && (apply_all || selected.contains(file.path.as_str()))
-    }) {
+    let candidates = request
+        .scan
+        .files
+        .iter()
+        .filter(|file| {
+            file.changed
+                && file.error.is_none()
+                && (apply_all || selected.contains(file.path.as_str()))
+        })
+        .collect::<Vec<_>>();
+    let total = candidates.len();
+    for (index, preview) in candidates.into_iter().enumerate() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
+        progress(OperationProgress {
+            stage: ProgressStage::Applying,
+            completed: index,
+            total,
+            current_path: Some(preview.path.clone()),
+        });
         let path = PathBuf::from(&preview.path);
-        let record = match apply_one(&path, preview, &request.scan.request.rules, &objects_dir) {
+        let selected_hunks = request.selected_hunks.get(&preview.path);
+        let encoding_override = request
+            .scan
+            .request
+            .encoding_overrides
+            .get(&preview.path)
+            .or(request.scan.request.default_encoding_override.as_ref())
+            .map(String::as_str);
+        let record = match apply_one(
+            &path,
+            preview,
+            &request.scan.request.rules,
+            selected_hunks,
+            encoding_override,
+            &objects_dir,
+        ) {
             Ok(record) => record,
             Err(error) => OperationFileRecord {
                 path: preview.path.clone(),
@@ -50,6 +93,15 @@ pub fn apply(request: ApplyRequest) -> Result<OperationManifest> {
         write_manifest(&operation_dir, &manifest)?;
     }
     write_manifest(&operation_dir, &manifest)?;
+    progress(OperationProgress {
+        stage: ProgressStage::Applying,
+        completed: total,
+        total,
+        current_path: None,
+    });
+    if let Some(retain) = request.backup_retention {
+        prune_operations(&request.backup_root, retain.max(1))?;
+    }
     Ok(manifest)
 }
 
@@ -57,6 +109,8 @@ fn apply_one(
     path: &Path,
     preview: &crate::FilePreview,
     rules: &[crate::ReplacementRule],
+    selected_hunks: Option<&Vec<String>>,
+    encoding_override: Option<&str>,
     objects_dir: &Path,
 ) -> Result<OperationFileRecord> {
     reject_symlink(path)?;
@@ -65,16 +119,23 @@ fn apply_one(
     if current_hash != preview.source_hash {
         return Err(Error::Conflict(preview.path.clone()));
     }
-    let decoded = decode(&original)?;
-    let (after, _) = transform(&decoded.text, rules)?;
-    let output = encode(&after, &decoded)?;
-    let result_hash = blake3::hash(&output).to_hex().to_string();
-    if result_hash != preview.result_hash {
+    let decoded = decode(&original, encoding_override)?;
+    let full_result = transform(&decoded.text, rules)?.0;
+    let full_output = encode(&full_result, &decoded)?;
+    if blake3::hash(&full_output).to_hex().as_str() != preview.result_hash {
         return Err(Error::Conflict(format!(
             "preview result no longer matches for {}",
             preview.path
         )));
     }
+    let after = if let Some(ids) = selected_hunks {
+        let hunks = build_hunks_for_text(&decoded.text, &full_result);
+        apply_selected_hunks(&decoded.text, &hunks, ids)?
+    } else {
+        full_result
+    };
+    let output = encode(&after, &decoded)?;
+    let result_hash = blake3::hash(&output).to_hex().to_string();
 
     let backup = objects_dir.join(&preview.source_hash);
     if !backup.exists() {
@@ -104,6 +165,51 @@ fn apply_one(
         status: FileOperationStatus::Changed,
         message: None,
     })
+}
+
+fn apply_selected_hunks(
+    source: &str,
+    hunks: &[DiffHunk],
+    selected_ids: &[String],
+) -> Result<String> {
+    let selected = selected_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    if selected.is_empty()
+        || selected
+            .iter()
+            .any(|id| !hunks.iter().any(|hunk| hunk.id == *id))
+    {
+        return Err(Error::Manifest("invalid or empty hunk selection".into()));
+    }
+    let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+    let mut output = String::with_capacity(source.len());
+    let mut cursor = 0;
+    for hunk in hunks {
+        let start = hunk.old_start.min(lines.len());
+        let end = (hunk.old_start + hunk.old_len).min(lines.len());
+        output.extend(lines[cursor..start].iter().copied());
+        if selected.contains(hunk.id.as_str()) {
+            output.push_str(&hunk.replacement);
+        } else {
+            output.extend(lines[start..end].iter().copied());
+        }
+        cursor = end;
+    }
+    output.extend(lines[cursor..].iter().copied());
+    Ok(output)
+}
+
+pub fn prune_operations(backup_root: &str, retain: usize) -> Result<usize> {
+    let manifests = list_operations(backup_root)?;
+    let mut removed = 0;
+    for manifest in manifests.into_iter().skip(retain) {
+        let directory = operation_dir(backup_root, &manifest.id)?;
+        fs::remove_dir_all(&directory).map_err(|error| io_error(&directory, error))?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 fn replace_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -321,6 +427,8 @@ mod tests {
                 multiline: true,
                 description: String::new(),
             }],
+            encoding_overrides: Default::default(),
+            default_encoding_override: None,
         }
     }
 
@@ -333,6 +441,8 @@ mod tests {
         let manifest = apply(ApplyRequest {
             scan,
             selected_paths: vec![],
+            selected_hunks: Default::default(),
+            backup_retention: None,
             backup_root: directory
                 .path()
                 .join("state")
@@ -371,6 +481,8 @@ mod tests {
         let manifest = apply(ApplyRequest {
             scan,
             selected_paths: vec![],
+            selected_hunks: Default::default(),
+            backup_retention: None,
             backup_root: directory
                 .path()
                 .join("state")
@@ -386,6 +498,87 @@ mod tests {
     }
 
     #[test]
+    fn applies_only_selected_hunks() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        fs::write(&target, "old one\nunchanged\nold two\n").unwrap();
+        let scan = scan(request(&target)).unwrap();
+        assert_eq!(scan.files[0].hunks.len(), 2);
+        let first_hunk = scan.files[0].hunks[0].id.clone();
+        let path = target.to_string_lossy().into_owned();
+        let manifest = apply(ApplyRequest {
+            scan,
+            selected_paths: vec![path.clone()],
+            selected_hunks: [(path, vec![first_hunk])].into_iter().collect(),
+            backup_root: directory
+                .path()
+                .join("state")
+                .to_string_lossy()
+                .into_owned(),
+            backup_retention: None,
+        })
+        .unwrap();
+        assert!(matches!(
+            manifest.files[0].status,
+            FileOperationStatus::Changed
+        ));
+        assert_eq!(
+            fs::read_to_string(target).unwrap(),
+            "new one\nunchanged\nold two\n"
+        );
+    }
+
+    #[test]
+    fn cancelled_apply_stops_before_the_next_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        fs::write(&target, "old").unwrap();
+        let backup_root = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        let cancelled = AtomicBool::new(true);
+        let result = apply_with_progress(
+            ApplyRequest {
+                scan: scan(request(&target)).unwrap(),
+                selected_paths: vec![],
+                selected_hunks: Default::default(),
+                backup_root,
+                backup_retention: None,
+            },
+            &cancelled,
+            |_| {},
+        );
+        assert!(matches!(result, Err(Error::Cancelled)));
+        assert_eq!(fs::read_to_string(target).unwrap(), "old");
+    }
+
+    #[test]
+    fn backup_retention_removes_old_operations() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        let backup_root = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        for _ in 0..2 {
+            fs::write(&target, "old").unwrap();
+            apply(ApplyRequest {
+                scan: scan(request(&target)).unwrap(),
+                selected_paths: vec![],
+                selected_hunks: Default::default(),
+                backup_root: backup_root.clone(),
+                backup_retention: Some(1),
+            })
+            .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(list_operations(&backup_root).unwrap().len(), 1);
+    }
+
+    #[test]
     fn undo_refuses_to_overwrite_external_changes() {
         let directory = tempfile::tempdir().unwrap();
         let target = directory.path().join("sample.txt");
@@ -398,6 +591,8 @@ mod tests {
         let manifest = apply(ApplyRequest {
             scan: scan(request(&target)).unwrap(),
             selected_paths: vec![],
+            selected_hunks: Default::default(),
+            backup_retention: None,
             backup_root: backup_root.clone(),
         })
         .unwrap();
@@ -448,6 +643,8 @@ mod tests {
         let manifest = apply(ApplyRequest {
             scan,
             selected_paths: vec![],
+            selected_hunks: Default::default(),
+            backup_retention: None,
             backup_root: directory
                 .path()
                 .join("state")
@@ -484,6 +681,8 @@ mod tests {
         let manifest = apply(ApplyRequest {
             scan,
             selected_paths: vec![],
+            selected_hunks: Default::default(),
+            backup_retention: None,
             backup_root: backup_root.to_string_lossy().into_owned(),
         })
         .unwrap();

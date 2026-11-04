@@ -1,3 +1,49 @@
+# SpeedReplace v1.1.0 (Unreleased)
+
+## English
+
+### Added
+
+- Live discovery, scan, and apply progress with cancellation between files.
+- Local rule presets in Advanced mode.
+- Configurable retention for verified backup operations.
+- Global and per-file manual encoding overrides with strict round-trip checks.
+- Selectable diff hunks so only chosen change blocks are applied.
+- A standalone `speedreplace` CLI with `scan`, `replace`, `history`, and
+  `undo` commands, JSON output, JSON rule files, filters, and encoding options.
+- Windows, Linux, and Universal macOS CLI artifacts in the packaging workflow.
+
+### Validation
+
+- All 21 Rust tests passed, including partial-hunk apply, cancellation, manual
+  encoding, and backup-retention coverage.
+- Rust formatting and Clippy static analysis passed.
+- TypeScript checking and the Vite production build passed.
+- CLI help and read-only JSON scan smoke tests passed.
+
+---
+
+## 日本語
+
+### 追加内容
+
+- ファイル検出・スキャン・適用の進捗表示と、ファイル間での安全なキャンセル
+- 詳細モードで利用できるローカルのルールプリセット
+- 検証済みバックアップ操作の保持世代数設定
+- 厳密な往復変換検証を行う全体・ファイル単位の文字コード手動指定
+- 選択した変更ブロックだけを適用できるハンク単位選択
+- `scan`、`replace`、`history`、`undo`、JSON出力、JSONルール、フィルター、文字コード指定に対応した`speedreplace` CLI
+- Windows、Linux、Universal macOS用CLIを配布Artifactへ追加
+
+### 検証結果
+
+- ハンク部分適用、キャンセル、文字コード指定、バックアップ保持を含むRustテスト21件がすべて合格
+- Rustフォーマット検査とClippy静的解析が合格
+- TypeScript型検査とVite製品ビルドが合格
+- CLIヘルプと読み取り専用JSONスキャンのスモークテストが合格
+
+---
+
 # SpeedReplace v1.0.2
 
 Release date: November 3, 2026

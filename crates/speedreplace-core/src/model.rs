@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +20,8 @@ pub enum Error {
     Conflict(String),
     #[error("invalid operation manifest: {0}")]
     Manifest(String),
+    #[error("operation cancelled")]
+    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -103,6 +106,10 @@ pub struct ScanRequest {
     #[serde(default)]
     pub filters: FilterSpec,
     pub rules: Vec<ReplacementRule>,
+    #[serde(default)]
+    pub encoding_overrides: BTreeMap<String, String>,
+    #[serde(default)]
+    pub default_encoding_override: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -138,10 +145,22 @@ pub struct FilePreview {
     pub line_endings: String,
     pub match_count: usize,
     pub diff: String,
+    #[serde(default)]
+    pub hunks: Vec<DiffHunk>,
     pub changed: bool,
     pub selected: bool,
     pub warnings: Vec<String>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffHunk {
+    pub id: String,
+    pub old_start: usize,
+    pub old_len: usize,
+    pub replacement: String,
+    pub diff: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -171,7 +190,27 @@ pub struct ApplyRequest {
     pub scan: ScanResult,
     #[serde(default)]
     pub selected_paths: Vec<String>,
+    #[serde(default)]
+    pub selected_hunks: BTreeMap<String, Vec<String>>,
     pub backup_root: String,
+    #[serde(default)]
+    pub backup_retention: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProgressStage {
+    Scanning,
+    Applying,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationProgress {
+    pub stage: ProgressStage,
+    pub completed: usize,
+    pub total: usize,
+    pub current_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
