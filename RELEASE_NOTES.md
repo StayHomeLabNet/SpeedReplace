@@ -1,4 +1,6 @@
-# SpeedReplace v1.1.1 (Unreleased)
+# SpeedReplace v1.1.1
+
+Release date: November 7, 2026
 
 ## English
 
@@ -20,6 +22,20 @@
   undoing only the files that were changed.
 - Added simulated forced-exit recovery coverage from a pending journal record
   through restart reconciliation and Undo.
+- Rust formatting and Clippy static analysis passed.
+- TypeScript checking and the Vite production build passed.
+
+### Distribution packages
+
+- Windows x64: MSI, NSIS (`.exe`), and `speedreplace.exe` CLI
+- Linux x64: Debian (`.deb`), AppImage, and `speedreplace` CLI
+- macOS Universal: DMG and Universal `speedreplace` CLI for Apple Silicon and
+  Intel Macs
+
+### Distribution note
+
+Packages are unsigned and may trigger an operating-system security warning.
+Verify downloads with the attached `SHA256SUMS.txt`.
 
 ---
 
@@ -39,6 +55,18 @@
 - Rustテスト24件がすべて合格
 - 一部適用後のキャンセル、履歴の再読み込み、変更済みファイルだけのUndoをテスト
 - 保留中のジャーナル記録から、強制終了を模した起動時復旧とUndoまでをテスト
+- Rustフォーマット検査とClippy静的解析が合格
+- TypeScript型検査とVite製品ビルドが合格
+
+### 配布パッケージ
+
+- Windows x64：MSI、NSIS（`.exe`）、`speedreplace.exe` CLI
+- Linux x64：Debian（`.deb`）、AppImage、`speedreplace` CLI
+- macOS Universal：Apple SiliconとIntel Mac対応のDMGおよびUniversal `speedreplace` CLI
+
+### 配布時の注意
+
+パッケージは未署名のため、OSのセキュリティ警告が表示される場合があります。添付の`SHA256SUMS.txt`でダウンロードを検証してください。
 
 ---
 
