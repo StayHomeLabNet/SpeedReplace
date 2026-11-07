@@ -1,3 +1,47 @@
+# SpeedReplace v1.1.1 (Unreleased)
+
+## English
+
+### Changed
+
+- Persist each file as pending before replacement, then finalize it only after
+  verified backup, atomic replacement, and post-write verification succeed.
+- Record operation-level running, completed, cancelled, and interrupted states
+  with processed and total file counts.
+- Reconcile unfinished operations at the next application start and retain the
+  changed-file set for safe Undo after a forced exit.
+- Show operation status, progress, and per-file results in History & Undo.
+- Report how many files were changed when an apply operation is cancelled.
+
+### Validation
+
+- All 24 Rust tests passed.
+- Added coverage for cancellation after a partial apply, reopening history, and
+  undoing only the files that were changed.
+- Added simulated forced-exit recovery coverage from a pending journal record
+  through restart reconciliation and Undo.
+
+---
+
+## 日本語
+
+### 変更内容
+
+- 各ファイルを置換前に保留中として永続化し、検証済みバックアップ、原子的置換、
+  書き込み後検証が成功した後にのみ変更済みとして確定するように変更
+- 操作全体に処理中、完了、キャンセル済み、中断の状態と処理済み・総ファイル数を記録
+- 未完了の操作を次回起動時に照合し、強制終了後も変更済みファイルだけを安全にUndo可能
+- 履歴・Undo画面に操作状態、進捗、ファイル単位の結果を表示
+- 適用のキャンセル時に、それまでに変更されたファイル数を表示
+
+### 検証結果
+
+- Rustテスト24件がすべて合格
+- 一部適用後のキャンセル、履歴の再読み込み、変更済みファイルだけのUndoをテスト
+- 保留中のジャーナル記録から、強制終了を模した起動時復旧とUndoまでをテスト
+
+---
+
 # SpeedReplace v1.1.0
 
 Release date: November 5, 2026

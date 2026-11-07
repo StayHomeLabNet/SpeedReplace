@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use speedreplace_core::{
     ApplyRequest, FilterSpec, ReplacementRule, RuleMode, ScanRequest, UndoRequest,
-    apply_with_progress, list_operations, scan_with_progress, undo,
+    apply_with_progress, recover_interrupted_operations, scan_with_progress, undo,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -121,7 +121,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Command::History(state) => {
-            let operations = list_operations(&state.backup_dir.to_string_lossy())?;
+            let operations = recover_interrupted_operations(&state.backup_dir.to_string_lossy())?;
             for operation in operations {
                 println!(
                     "{}\t{}\t{} files",

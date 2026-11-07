@@ -55,6 +55,7 @@ file-format handling and safeguards against accidental data loss.
 - Per-file diff preview and dry run
 - Per-hunk selection inside each file preview
 - Live scan/apply progress with safe cancellation between files
+- Crash-recoverable operation journals with partial-operation Undo
 - Reusable rule presets
 - Automatic backup retention limits
 - Automatic or manually overridden text encoding

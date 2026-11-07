@@ -67,12 +67,16 @@ export interface OperationManifest {
   id: string;
   scanId: string;
   createdAt: string;
+  status: "running" | "completed" | "cancelled" | "interrupted";
+  finishedAt: string | null;
+  totalFiles: number;
+  processedFiles: number;
   files: Array<{
     path: string;
     sourceHash: string;
     resultHash: string;
     backupFile: string;
-    status: "changed" | "restored" | "skipped" | "conflict" | "failed";
+    status: "pending" | "changed" | "restored" | "skipped" | "conflict" | "failed";
     message: string | null;
   }>;
 }

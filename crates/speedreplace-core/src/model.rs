@@ -213,14 +213,28 @@ pub struct OperationProgress {
     pub current_path: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum FileOperationStatus {
+    Pending,
     Changed,
     Restored,
     Skipped,
     Conflict,
     Failed,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OperationStatus {
+    Running,
+    Completed,
+    Cancelled,
+    Interrupted,
+}
+
+fn default_completed_status() -> OperationStatus {
+    OperationStatus::Completed
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -241,6 +255,14 @@ pub struct OperationManifest {
     pub id: String,
     pub scan_id: String,
     pub created_at: String,
+    #[serde(default = "default_completed_status")]
+    pub status: OperationStatus,
+    #[serde(default)]
+    pub finished_at: Option<String>,
+    #[serde(default)]
+    pub total_files: usize,
+    #[serde(default)]
+    pub processed_files: usize,
     pub files: Vec<OperationFileRecord>,
 }
 

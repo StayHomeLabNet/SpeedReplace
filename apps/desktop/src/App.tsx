@@ -99,6 +99,11 @@ function App() {
 
   useEffect(() => {
     if (!isTauri()) return;
+    void loadHistory(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
     const unlisten = getCurrentWindow().onDragDropEvent((event) => {
       if (event.payload.type === "drop") addTargets(event.payload.paths);
     });
@@ -240,11 +245,14 @@ function App() {
       await loadHistory();
     } catch (reason) {
       if (String(reason).includes("cancelled")) {
-        setError({ key: "error.cancelled" });
+        setError({});
         setScan(null);
         setSelected(new Set());
         setPhase("complete");
-        await loadHistory();
+        const operations = await loadHistory();
+        const cancelled = operations.find((operation) => operation.status === "cancelled");
+        const changed = cancelled?.files.filter((file) => file.status === "changed").length ?? 0;
+        setMessage({ key: "message.cancelledApplied", values: { files: changed } });
       } else {
         setError({ text: String(reason) });
         setPhase("preview");
@@ -255,11 +263,29 @@ function App() {
     }
   }
 
-  async function loadHistory() {
+  async function loadHistory(announceRecovery = false): Promise<OperationManifest[]> {
     try {
-      setHistory(await invoke<OperationManifest[]>("list_operations"));
+      const beforeRecovery = announceRecovery
+        ? await invoke<OperationManifest[]>("list_operations")
+        : [];
+      const interruptedIds = new Set(
+        beforeRecovery.filter((operation) => operation.status === "running").map((operation) => operation.id),
+      );
+      const operations = announceRecovery
+        ? await invoke<OperationManifest[]>("recover_operations")
+        : await invoke<OperationManifest[]>("list_operations");
+      setHistory(operations);
+      if (interruptedIds.size) {
+        const recovered = operations
+          .filter((operation) => interruptedIds.has(operation.id))
+          .flatMap((operation) => operation.files)
+          .filter((file) => file.status === "changed").length;
+        if (recovered) setMessage({ key: "message.recovered", values: { files: recovered } });
+      }
+      return operations;
     } catch (reason) {
       setError({ text: String(reason) });
+      return [];
     }
   }
 
@@ -496,12 +522,30 @@ function App() {
               <button className="icon" aria-label={t("history.close")} onClick={() => setShowHistory(false)}>×</button>
             </div>
             {!history.length ? <p className="muted">{t("history.empty")}</p> : history.map((operation) => (
-              <div className="history-row" key={operation.id}>
-                <div>
-                  <strong>{new Date(operation.createdAt).toLocaleString(locale.code)}</strong>
-                  <small>{count("file", operation.files.filter((file) => file.status === "changed").length)}</small>
+              <div className="history-entry" key={operation.id}>
+                <div className="history-row">
+                  <div>
+                    <span className={`operation-status ${operation.status}`}>{t(`history.status.${operation.status}` as TranslationKey)}</span>
+                    <strong>{new Date(operation.createdAt).toLocaleString(locale.code)}</strong>
+                    <small>{t("history.filesProcessed", { processed: operation.processedFiles, total: operation.totalFiles })}</small>
+                  </div>
+                  <button
+                    disabled={!operation.files.some((file) => file.status === "changed")}
+                    onClick={() => undoOperation(operation)}
+                  >{t("history.undo")}</button>
                 </div>
-                <button onClick={() => undoOperation(operation)}>{t("history.undo")}</button>
+                <details className="history-files">
+                  <summary>{t("history.showFiles", { files: count("file", operation.files.length) })}</summary>
+                  <ul>
+                    {operation.files.map((file) => (
+                      <li key={file.path}>
+                        <span className={`file-operation-status ${file.status}`}>{t(`history.fileStatus.${file.status}` as TranslationKey)}</span>
+                        <span title={file.path}>{shortPath(file.path)}</span>
+                        {file.message && <small>{file.message}</small>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               </div>
             ))}
           </section>

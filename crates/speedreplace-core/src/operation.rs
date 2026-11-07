@@ -2,7 +2,7 @@ use crate::encoding::{decode, encode};
 use crate::engine::{build_hunks_for_text, transform};
 use crate::{
     ApplyRequest, DiffHunk, Error, FileOperationStatus, OperationFileRecord, OperationManifest,
-    OperationProgress, ProgressStage, Result, UndoPreview, UndoRequest, io_error,
+    OperationProgress, OperationStatus, ProgressStage, Result, UndoPreview, UndoRequest, io_error,
 };
 use chrono::Utc;
 use std::collections::HashSet;
@@ -22,21 +22,8 @@ pub fn apply_with_progress(
     cancelled: &AtomicBool,
     mut progress: impl FnMut(OperationProgress),
 ) -> Result<OperationManifest> {
-    let operation_id = Uuid::new_v4().to_string();
-    let operation_dir = operation_dir(&request.backup_root, &operation_id)?;
-    let objects_dir = operation_dir.join("objects");
-    fs::create_dir_all(&objects_dir).map_err(|error| io_error(&objects_dir, error))?;
     let selected: HashSet<&str> = request.selected_paths.iter().map(String::as_str).collect();
     let apply_all = selected.is_empty();
-    let mut manifest = OperationManifest {
-        schema_version: 1,
-        id: operation_id,
-        scan_id: request.scan.id.clone(),
-        created_at: Utc::now().to_rfc3339(),
-        files: vec![],
-    };
-    write_manifest(&operation_dir, &manifest)?;
-
     let candidates = request
         .scan
         .files
@@ -48,8 +35,26 @@ pub fn apply_with_progress(
         })
         .collect::<Vec<_>>();
     let total = candidates.len();
+    let operation_id = Uuid::new_v4().to_string();
+    let operation_dir = operation_dir(&request.backup_root, &operation_id)?;
+    let objects_dir = operation_dir.join("objects");
+    fs::create_dir_all(&objects_dir).map_err(|error| io_error(&objects_dir, error))?;
+    let mut manifest = OperationManifest {
+        schema_version: 2,
+        id: operation_id,
+        scan_id: request.scan.id.clone(),
+        created_at: Utc::now().to_rfc3339(),
+        status: OperationStatus::Running,
+        finished_at: None,
+        total_files: total,
+        processed_files: 0,
+        files: vec![],
+    };
+    write_manifest(&operation_dir, &manifest)?;
+
     for (index, preview) in candidates.into_iter().enumerate() {
         if cancelled.load(Ordering::Relaxed) {
+            finish_manifest(&operation_dir, &mut manifest, OperationStatus::Cancelled)?;
             return Err(Error::Cancelled);
         }
         progress(OperationProgress {
@@ -67,7 +72,7 @@ pub fn apply_with_progress(
             .get(&preview.path)
             .or(request.scan.request.default_encoding_override.as_ref())
             .map(String::as_str);
-        let record = match apply_one(
+        let prepared = match prepare_one(
             &path,
             preview,
             &request.scan.request.rules,
@@ -75,24 +80,46 @@ pub fn apply_with_progress(
             encoding_override,
             &objects_dir,
         ) {
-            Ok(record) => record,
-            Err(error) => OperationFileRecord {
-                path: preview.path.clone(),
-                source_hash: preview.source_hash.clone(),
-                result_hash: preview.result_hash.clone(),
-                backup_file: String::new(),
-                status: if matches!(error, Error::Conflict(_)) {
-                    FileOperationStatus::Conflict
-                } else {
-                    FileOperationStatus::Failed
-                },
-                message: Some(error.to_string()),
-            },
+            Ok(prepared) => prepared,
+            Err(error) => {
+                let record = OperationFileRecord {
+                    path: preview.path.clone(),
+                    source_hash: preview.source_hash.clone(),
+                    result_hash: preview.result_hash.clone(),
+                    backup_file: String::new(),
+                    status: if matches!(error, Error::Conflict(_)) {
+                        FileOperationStatus::Conflict
+                    } else {
+                        FileOperationStatus::Failed
+                    },
+                    message: Some(error.to_string()),
+                };
+                manifest.files.push(record);
+                manifest.processed_files += 1;
+                write_manifest(&operation_dir, &manifest)?;
+                continue;
+            }
         };
-        manifest.files.push(record);
+        manifest.files.push(prepared.record.clone());
+        write_manifest(&operation_dir, &manifest)?;
+        let commit_result = commit_prepared(&prepared);
+        let record = manifest
+            .files
+            .last_mut()
+            .expect("a pending record was just added");
+        if let Err(error) = commit_result {
+            reconcile_pending_record(&operation_dir, record, Some(error.to_string()))?;
+            if record.status == FileOperationStatus::Skipped {
+                record.status = FileOperationStatus::Failed;
+            }
+        } else {
+            record.status = FileOperationStatus::Changed;
+            record.message = None;
+        }
+        manifest.processed_files += 1;
         write_manifest(&operation_dir, &manifest)?;
     }
-    write_manifest(&operation_dir, &manifest)?;
+    finish_manifest(&operation_dir, &mut manifest, OperationStatus::Completed)?;
     progress(OperationProgress {
         stage: ProgressStage::Applying,
         completed: total,
@@ -105,14 +132,21 @@ pub fn apply_with_progress(
     Ok(manifest)
 }
 
-fn apply_one(
+struct PreparedChange {
+    path: PathBuf,
+    original: Vec<u8>,
+    output: Vec<u8>,
+    record: OperationFileRecord,
+}
+
+fn prepare_one(
     path: &Path,
     preview: &crate::FilePreview,
     rules: &[crate::ReplacementRule],
     selected_hunks: Option<&Vec<String>>,
     encoding_override: Option<&str>,
     objects_dir: &Path,
-) -> Result<OperationFileRecord> {
+) -> Result<PreparedChange> {
     reject_symlink(path)?;
     let original = fs::read(path).map_err(|error| io_error(path, error))?;
     let current_hash = blake3::hash(&original).to_hex().to_string();
@@ -138,33 +172,43 @@ fn apply_one(
     let result_hash = blake3::hash(&output).to_hex().to_string();
 
     let backup = objects_dir.join(&preview.source_hash);
+    Ok(PreparedChange {
+        path: path.to_path_buf(),
+        original,
+        output,
+        record: OperationFileRecord {
+            path: preview.path.clone(),
+            source_hash: preview.source_hash.clone(),
+            result_hash,
+            backup_file: backup.to_string_lossy().into_owned(),
+            status: FileOperationStatus::Pending,
+            message: None,
+        },
+    })
+}
+
+fn commit_prepared(prepared: &PreparedChange) -> Result<()> {
+    let backup = Path::new(&prepared.record.backup_file);
     if !backup.exists() {
-        fs::write(&backup, &original).map_err(|error| io_error(&backup, error))?;
+        fs::write(backup, &prepared.original).map_err(|error| io_error(backup, error))?;
     }
-    let verified = fs::read(&backup).map_err(|error| io_error(&backup, error))?;
-    if blake3::hash(&verified).to_hex().as_str() != preview.source_hash {
+    let verified = fs::read(backup).map_err(|error| io_error(backup, error))?;
+    if blake3::hash(&verified).to_hex().as_str() != prepared.record.source_hash {
         return Err(Error::Manifest(format!(
             "backup verification failed for {}",
-            preview.path
+            prepared.record.path
         )));
     }
 
-    replace_file(path, &output)?;
-    let written = fs::read(path).map_err(|error| io_error(path, error))?;
-    if blake3::hash(&written).to_hex().as_str() != result_hash {
+    replace_file(&prepared.path, &prepared.output)?;
+    let written = fs::read(&prepared.path).map_err(|error| io_error(&prepared.path, error))?;
+    if blake3::hash(&written).to_hex().as_str() != prepared.record.result_hash {
         return Err(Error::Conflict(format!(
             "post-write verification failed for {}",
-            preview.path
+            prepared.record.path
         )));
     }
-    Ok(OperationFileRecord {
-        path: preview.path.clone(),
-        source_hash: preview.source_hash.clone(),
-        result_hash,
-        backup_file: backup.to_string_lossy().into_owned(),
-        status: FileOperationStatus::Changed,
-        message: None,
-    })
+    Ok(())
 }
 
 fn apply_selected_hunks(
@@ -234,6 +278,14 @@ fn replace_file(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn list_operations(backup_root: &str) -> Result<Vec<OperationManifest>> {
+    read_operations(backup_root, false)
+}
+
+pub fn recover_interrupted_operations(backup_root: &str) -> Result<Vec<OperationManifest>> {
+    read_operations(backup_root, true)
+}
+
+fn read_operations(backup_root: &str, recover: bool) -> Result<Vec<OperationManifest>> {
     let root = PathBuf::from(backup_root).join("operations");
     if !root.exists() {
         return Ok(vec![]);
@@ -243,8 +295,12 @@ pub fn list_operations(backup_root: &str) -> Result<Vec<OperationManifest>> {
         let entry = entry.map_err(|error| io_error(&root, error))?;
         let manifest_path = entry.path().join("manifest.json");
         if manifest_path.is_file()
-            && let Ok(manifest) = read_manifest(&manifest_path)
+            && let Ok(mut manifest) = read_manifest(&manifest_path)
         {
+            normalize_legacy_manifest(&mut manifest);
+            if recover && manifest.status == OperationStatus::Running {
+                recover_interrupted_manifest(&entry.path(), &mut manifest)?;
+            }
             manifests.push(manifest);
         }
     }
@@ -375,18 +431,116 @@ fn write_manifest(directory: &Path, manifest: &OperationManifest) -> Result<()> 
     Ok(())
 }
 
+fn finish_manifest(
+    directory: &Path,
+    manifest: &mut OperationManifest,
+    status: OperationStatus,
+) -> Result<()> {
+    manifest.status = status;
+    manifest.finished_at = Some(Utc::now().to_rfc3339());
+    write_manifest(directory, manifest)
+}
+
+fn recover_interrupted_manifest(directory: &Path, manifest: &mut OperationManifest) -> Result<()> {
+    for record in &mut manifest.files {
+        if record.status == FileOperationStatus::Pending {
+            reconcile_pending_record(
+                directory,
+                record,
+                Some("Recovered after an interrupted operation".into()),
+            )?;
+        }
+    }
+    manifest.processed_files = manifest.files.len();
+    finish_manifest(directory, manifest, OperationStatus::Interrupted)
+}
+
+fn reconcile_pending_record(
+    operation_directory: &Path,
+    record: &mut OperationFileRecord,
+    context: Option<String>,
+) -> Result<()> {
+    let path = Path::new(&record.path);
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            record.status = FileOperationStatus::Conflict;
+            record.message = Some(format_context(context, "Target file is missing"));
+            return Ok(());
+        }
+        Err(error) => return Err(io_error(path, error)),
+    };
+    if metadata.file_type().is_symlink() {
+        record.status = FileOperationStatus::Conflict;
+        record.message = Some(format_context(context, "Target is now a symbolic link"));
+        return Ok(());
+    }
+
+    let current = fs::read(path).map_err(|error| io_error(path, error))?;
+    let current_hash = blake3::hash(&current).to_hex().to_string();
+    if current_hash == record.source_hash {
+        record.status = FileOperationStatus::Skipped;
+        record.message = Some(format_context(context, "File was not changed"));
+    } else if current_hash == record.result_hash {
+        let backup = operation_directory
+            .join("objects")
+            .join(&record.source_hash);
+        match fs::read(&backup) {
+            Ok(original) if blake3::hash(&original).to_hex().as_str() == record.source_hash => {
+                record.backup_file = backup.to_string_lossy().into_owned();
+                record.status = FileOperationStatus::Changed;
+                record.message = context;
+            }
+            Ok(_) => {
+                record.status = FileOperationStatus::Conflict;
+                record.message = Some(format_context(context, "Backup hash does not match"));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                record.status = FileOperationStatus::Conflict;
+                record.message = Some(format_context(context, "Verified backup is missing"));
+            }
+            Err(error) => return Err(io_error(&backup, error)),
+        }
+    } else {
+        record.status = FileOperationStatus::Conflict;
+        record.message = Some(format_context(
+            context,
+            "File contents match neither the source nor replacement",
+        ));
+    }
+    Ok(())
+}
+
+fn format_context(context: Option<String>, detail: &str) -> String {
+    context.map_or_else(
+        || detail.to_owned(),
+        |context| format!("{context}: {detail}"),
+    )
+}
+
 fn read_manifest(path: &Path) -> Result<OperationManifest> {
     let bytes = fs::read(path).map_err(|error| io_error(path, error))?;
     serde_json::from_slice(&bytes).map_err(|error| Error::Manifest(error.to_string()))
 }
 
+fn normalize_legacy_manifest(manifest: &mut OperationManifest) {
+    if manifest.schema_version == 1 {
+        manifest.total_files = manifest.files.len();
+        manifest.processed_files = manifest.files.len();
+    }
+}
+
 fn load_operation(backup_root: &str, operation_id: &str) -> Result<OperationManifest> {
     let directory = operation_dir(backup_root, operation_id)?;
-    let manifest = read_manifest(&directory.join("manifest.json"))?;
-    if manifest.schema_version != 1 || manifest.id != operation_id {
+    let mut manifest = read_manifest(&directory.join("manifest.json"))?;
+    if !matches!(manifest.schema_version, 1 | 2) || manifest.id != operation_id {
         return Err(Error::Manifest(
             "operation manifest identity or schema does not match".into(),
         ));
+    }
+    normalize_legacy_manifest(&mut manifest);
+    if manifest.status == OperationStatus::Running {
+        recover_interrupted_manifest(&directory, &mut manifest)?;
     }
     Ok(manifest)
 }
@@ -552,6 +706,175 @@ mod tests {
         );
         assert!(matches!(result, Err(Error::Cancelled)));
         assert_eq!(fs::read_to_string(target).unwrap(), "old");
+        let operations =
+            list_operations(&directory.path().join("state").to_string_lossy()).unwrap();
+        assert_eq!(operations[0].status, OperationStatus::Cancelled);
+        assert_eq!(operations[0].processed_files, 0);
+    }
+
+    #[test]
+    fn partial_cancel_survives_reopen_and_undoes_only_changed_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first.txt");
+        let second = directory.path().join("second.txt");
+        fs::write(&first, "old first").unwrap();
+        fs::write(&second, "old second").unwrap();
+        let backup_root = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        let cancelled = AtomicBool::new(false);
+        let result = apply_with_progress(
+            ApplyRequest {
+                scan: scan(request(directory.path())).unwrap(),
+                selected_paths: vec![],
+                selected_hunks: Default::default(),
+                backup_root: backup_root.clone(),
+                backup_retention: None,
+            },
+            &cancelled,
+            |progress| {
+                if matches!(progress.stage, ProgressStage::Applying) && progress.completed == 0 {
+                    cancelled.store(true, Ordering::Relaxed);
+                }
+            },
+        );
+        assert!(matches!(result, Err(Error::Cancelled)));
+
+        let reopened = list_operations(&backup_root).unwrap();
+        let operation = &reopened[0];
+        assert_eq!(operation.status, OperationStatus::Cancelled);
+        assert_eq!(operation.total_files, 2);
+        assert_eq!(operation.processed_files, 1);
+        assert_eq!(
+            operation
+                .files
+                .iter()
+                .filter(|record| record.status == FileOperationStatus::Changed)
+                .count(),
+            1
+        );
+        let preview = undo_preview(&backup_root, &operation.id).unwrap();
+        assert_eq!(preview.safe.len(), 1);
+        undo(UndoRequest {
+            backup_root,
+            operation_id: operation.id.clone(),
+            selected_paths: preview.safe,
+            overwrite_conflicts: false,
+        })
+        .unwrap();
+        assert_eq!(fs::read_to_string(first).unwrap(), "old first");
+        assert_eq!(fs::read_to_string(second).unwrap(), "old second");
+    }
+
+    #[test]
+    fn running_manifest_is_reconciled_after_restart_and_can_be_undone() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        fs::write(&target, "old").unwrap();
+        let scan_result = scan(request(&target)).unwrap();
+        let backup_root = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        let id = Uuid::new_v4().to_string();
+        let operation_directory = operation_dir(&backup_root, &id).unwrap();
+        let objects = operation_directory.join("objects");
+        fs::create_dir_all(&objects).unwrap();
+        let prepared = prepare_one(
+            &target,
+            &scan_result.files[0],
+            &scan_result.request.rules,
+            None,
+            None,
+            &objects,
+        )
+        .unwrap();
+        let manifest = OperationManifest {
+            schema_version: 2,
+            id: id.clone(),
+            scan_id: scan_result.id,
+            created_at: Utc::now().to_rfc3339(),
+            status: OperationStatus::Running,
+            finished_at: None,
+            total_files: 1,
+            processed_files: 0,
+            files: vec![prepared.record.clone()],
+        };
+        write_manifest(&operation_directory, &manifest).unwrap();
+        commit_prepared(&prepared).unwrap();
+
+        let live_view = list_operations(&backup_root).unwrap();
+        assert_eq!(live_view[0].status, OperationStatus::Running);
+        assert_eq!(live_view[0].files[0].status, FileOperationStatus::Pending);
+        let reopened = recover_interrupted_operations(&backup_root).unwrap();
+        assert_eq!(reopened[0].status, OperationStatus::Interrupted);
+        assert_eq!(reopened[0].processed_files, 1);
+        assert_eq!(reopened[0].files[0].status, FileOperationStatus::Changed);
+        let preview = undo_preview(&backup_root, &id).unwrap();
+        assert_eq!(preview.safe, vec![target.to_string_lossy()]);
+        undo(UndoRequest {
+            backup_root,
+            operation_id: id,
+            selected_paths: vec![],
+            overwrite_conflicts: false,
+        })
+        .unwrap();
+        assert_eq!(fs::read_to_string(target).unwrap(), "old");
+    }
+
+    #[test]
+    fn pending_file_not_yet_replaced_is_recovered_as_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("sample.txt");
+        fs::write(&target, "old").unwrap();
+        let scan_result = scan(request(&target)).unwrap();
+        let backup_root = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        let id = Uuid::new_v4().to_string();
+        let operation_directory = operation_dir(&backup_root, &id).unwrap();
+        let objects = operation_directory.join("objects");
+        fs::create_dir_all(&objects).unwrap();
+        let prepared = prepare_one(
+            &target,
+            &scan_result.files[0],
+            &scan_result.request.rules,
+            None,
+            None,
+            &objects,
+        )
+        .unwrap();
+        write_manifest(
+            &operation_directory,
+            &OperationManifest {
+                schema_version: 2,
+                id,
+                scan_id: scan_result.id,
+                created_at: Utc::now().to_rfc3339(),
+                status: OperationStatus::Running,
+                finished_at: None,
+                total_files: 1,
+                processed_files: 0,
+                files: vec![prepared.record],
+            },
+        )
+        .unwrap();
+
+        let reopened = recover_interrupted_operations(&backup_root).unwrap();
+        assert_eq!(reopened[0].status, OperationStatus::Interrupted);
+        assert_eq!(reopened[0].files[0].status, FileOperationStatus::Skipped);
+        assert_eq!(fs::read_to_string(target).unwrap(), "old");
+        assert!(
+            undo_preview(&backup_root, &reopened[0].id)
+                .unwrap()
+                .safe
+                .is_empty()
+        );
     }
 
     #[test]

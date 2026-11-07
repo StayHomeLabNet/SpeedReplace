@@ -13,6 +13,9 @@ use tauri::{Emitter, Manager, State};
 #[derive(Default)]
 struct OperationControls(Mutex<HashMap<String, Arc<AtomicBool>>>);
 
+#[derive(Default)]
+struct RecoveryLock(Mutex<()>);
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressEvent {
@@ -142,6 +145,16 @@ async fn list_operations(app: tauri::AppHandle) -> Result<Vec<OperationManifest>
 }
 
 #[tauri::command]
+fn recover_operations(
+    app: tauri::AppHandle,
+    recovery_lock: State<'_, RecoveryLock>,
+) -> Result<Vec<OperationManifest>, String> {
+    let _guard = recovery_lock.0.lock().map_err(user_error)?;
+    let root = backup_root(&app)?;
+    speedreplace_core::recover_interrupted_operations(&root).map_err(user_error)
+}
+
+#[tauri::command]
 async fn get_undo_preview(
     app: tauri::AppHandle,
     operation_id: String,
@@ -186,12 +199,14 @@ async fn undo_operation(
 pub fn run() {
     tauri::Builder::default()
         .manage(OperationControls::default())
+        .manage(RecoveryLock::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             validate_rules,
             scan_files,
             apply_changes,
             list_operations,
+            recover_operations,
             get_undo_preview,
             undo_operation,
             cancel_operation

@@ -1,4 +1,4 @@
-# SpeedReplace v1.1.0 user guide
+# SpeedReplace v1.1.1 user guide
 
 The interface starts in English. Use the language selector in the application
 header to switch between English and Japanese. The selection is retained on
@@ -58,7 +58,15 @@ preview and requires another scan.
 Scanning and applying display completed and total file counts plus the current
 path. **Cancel** stops before the next file. During apply, files already
 completed remain safely changed with backup manifests; the history can undo
-them. A file is never interrupted midway through its atomic replacement.
+them. The cancellation message reports how many files were changed. A file is
+never interrupted midway through its atomic replacement.
+
+Each file is recorded as pending before SpeedReplace starts its write. If the
+application or computer exits unexpectedly, SpeedReplace reconciles unfinished
+operations on the next start by comparing the target with the recorded source
+and result hashes. History then marks the operation as interrupted and shows
+which files changed, remained unchanged, or need review. Files confirmed as
+changed remain available for conflict-aware Undo after reopening the app.
 
 ## Rule presets and backup retention
 
@@ -80,7 +88,8 @@ automation output.
 Open **History & Undo** (`履歴・Undo`) and choose an operation. SpeedReplace
 checks every current file against the hash recorded immediately after the
 replacement. Files that have not changed can be restored. Externally modified
-files are reported as conflicts and skipped.
+files are reported as conflicts and skipped. Expand an operation to inspect its
+completion state and per-file results before restoring it.
 
 Backups and manifests are stored in the operating system's application-data
 directory, outside the target tree.
